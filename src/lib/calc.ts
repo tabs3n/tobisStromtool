@@ -241,8 +241,19 @@ export interface ProjectResult {
 
 export type IssueLevel = 'error' | 'warn';
 
+export type IssueCode =
+  | 'dist-budget'
+  | 'dist-phase'
+  | 'dist-imbalance'
+  | 'cable-ampacity'
+  | 'cable-drop'
+  | 'outlet-breaker'
+  /** Selbst gesetztes Ziel-Maximum überschritten – reine Planungshilfe, nicht im Report. */
+  | 'outlet-target';
+
 export interface Issue {
   level: IssueLevel;
+  code: IssueCode;
   scope: string;
   message: string;
 }
@@ -264,6 +275,7 @@ export function calcProject(project: Project): ProjectResult {
     if (dr.overBudget) {
       issues.push({
         level: 'error',
+        code: 'dist-budget',
         scope: dist.name,
         message: `Leistungsbudget überschritten: ${fmtW(dr.watt)} von ${fmtW(dist.maxWatt)}.`,
       });
@@ -271,12 +283,14 @@ export function calcProject(project: Project): ProjectResult {
     if (dr.overPhase) {
       issues.push({
         level: 'error',
+        code: 'dist-phase',
         scope: dist.name,
         message: `Phasenabsicherung überschritten: ${dr.maxPhaseAmps.toFixed(1)} A von ${dist.maxAmpsPerPhase} A.`,
       });
     } else if (dr.imbalancePct > 25 && dr.maxPhaseAmps > 5) {
       issues.push({
         level: 'warn',
+        code: 'dist-imbalance',
         scope: dist.name,
         message: `Schieflast ${dr.imbalancePct.toFixed(0)} % (L1 ${dr.amps.L1.toFixed(1)} A / L2 ${dr.amps.L2.toFixed(1)} A / L3 ${dr.amps.L3.toFixed(1)} A).`,
       });
@@ -288,6 +302,7 @@ export function calcProject(project: Project): ProjectResult {
         if (br.drop.ampacityExceeded) {
           issues.push({
             level: 'error',
+            code: 'cable-ampacity',
             scope: `${dist.name} · ${box.name}`,
             message: `Zuleitung ${br.drop.cable.name}: ${br.drop.amps.toFixed(1)} A über Belastbarkeit ${br.drop.cable.maxAmps} A.`,
           });
@@ -295,6 +310,7 @@ export function calcProject(project: Project): ProjectResult {
         if (!br.drop.ok) {
           issues.push({
             level: 'warn',
+            code: 'cable-drop',
             scope: `${dist.name} · ${box.name}`,
             message: `Spannungsfall ${br.drop.dropPct.toFixed(2)} % über Grenzwert ${project.maxVoltageDropPct} % (${br.drop.cable.name}, ${br.drop.lengthM} m).`,
           });
@@ -306,12 +322,14 @@ export function calcProject(project: Project): ProjectResult {
         if (or.status === 'over') {
           issues.push({
             level: 'error',
+            code: 'outlet-breaker',
             scope: `${dist.name} · ${name}`,
             message: `${or.amps.toFixed(1)} A über Absicherung ${outlet.breakerAmps} A (${fmtW(or.watt)}).`,
           });
         } else if (or.status === 'warn') {
           issues.push({
             level: 'warn',
+            code: 'outlet-target',
             scope: `${dist.name} · ${name}`,
             message: `${fmtW(or.watt)} über eigenem Maximum ${fmtW(outlet.maxWatt)}.`,
           });

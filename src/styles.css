@@ -135,6 +135,17 @@ select {
   background: #3570bb;
 }
 
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: inherit;
+}
+
 .btn.danger:hover {
   background: #4a1f22;
   border-color: var(--danger);

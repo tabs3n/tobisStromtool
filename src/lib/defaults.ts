@@ -41,14 +41,23 @@ export function makeDistributor(name: string): Distributor {
   };
 }
 
-/** Verteiler-Vorlagen; alle Werte bleiben frei editierbar. */
-export const DISTRIBUTOR_PRESETS: { model: string; maxAmpsPerPhase: number; maxWatt: number }[] = [
-  { model: 'Avolites ART2000', maxAmpsPerPhase: 125, maxWatt: 80000 },
-  { model: 'Avolites ART2000 (63 A Speisung)', maxAmpsPerPhase: 63, maxWatt: 43470 },
-  { model: 'Baustromverteiler 63 A', maxAmpsPerPhase: 63, maxWatt: 43470 },
-  { model: 'Baustromverteiler 32 A', maxAmpsPerPhase: 32, maxWatt: 22080 },
-  { model: 'Powerlock 200 A', maxAmpsPerPhase: 200, maxWatt: 138000 },
+/**
+ * Zuleitungen zur Auswahl. Das Watt-Budget wird daraus mit den aktuellen
+ * Projektwerten gerechnet, statt es fest zu hinterlegen.
+ */
+export const SUPPLY_PRESETS: { label: string; amps: number }[] = [
+  { label: 'CEE 16 A', amps: 16 },
+  { label: 'CEE 32 A', amps: 32 },
+  { label: 'CEE 63 A', amps: 63 },
+  { label: 'CEE 125 A', amps: 125 },
+  { label: 'Powerlock 200 A', amps: 200 },
+  { label: 'Powerlock 400 A', amps: 400 },
 ];
+
+/** Budget aus Absicherung: P = 3 · U · I · cos φ, auf 100 W gerundet. */
+export function budgetFromAmps(amps: number, p: Pick<Project, 'voltage' | 'cosPhi'>): number {
+  return Math.round((3 * p.voltage * amps * p.cosPhi) / 100) * 100;
+}
 
 export const DEFAULT_CABLE_TYPES: CableType[] = [
   { id: 'cbl_25', name: 'H07RN-F 5G2,5', crossSectionMm2: 2.5, cores: 5, maxAmps: 20 },

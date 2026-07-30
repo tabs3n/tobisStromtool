@@ -12,6 +12,7 @@ export function OutletModal() {
   const bumpQty = useStore((s) => s.bumpQty);
   const updateOutlet = useStore((s) => s.updateOutlet);
   const clearOutlet = useStore((s) => s.clearOutlet);
+  const removeOutlet = useStore((s) => s.removeOutlet);
   const [filter, setFilter] = useState('');
 
   const found = useMemo(() => {
@@ -51,7 +52,19 @@ export function OutletModal() {
       footer={
         <>
           <button className="btn danger" onClick={() => clearOutlet(dist.id, box.id, outlet.id)}>
-            Abgang leeren
+            Leeren
+          </button>
+          <button
+            className="btn danger"
+            disabled={box.outlets.length <= 1}
+            title={box.outlets.length <= 1 ? 'Die letzte Plugbox-Phase lässt sich nicht entfernen' : undefined}
+            onClick={() => {
+              const label = outletName(box, outlet);
+              if (outlet.loads.length > 0 && !confirm(`${label} ist bestückt. Abgang trotzdem entfernen?`)) return;
+              removeOutlet(dist.id, box.id, outlet.id);
+            }}
+          >
+            Abgang entfernen
           </button>
           <div style={{ flex: 1 }} />
           <div className="meter" style={{ width: 200, height: 11 }}>

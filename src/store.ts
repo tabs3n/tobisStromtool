@@ -2,14 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import type { CableType, Distributor, FixtureType, Outlet, PlugBox, Project } from './types';
-import {
-  createEmptyProject,
-  defaultPhaseForIndex,
-  makeDistributor,
-  makeOutlet,
-  makePlugBox,
-  nextPlugBoxName,
-} from './lib/defaults';
+import { createEmptyProject, makeDistributor, makeOutlet, makePlugBox, nextPlugBoxName } from './lib/defaults';
 import { uid } from './lib/uid';
 
 interface Locate {
@@ -44,8 +37,8 @@ export interface StoreState {
   duplicatePlugBox: (distId: string, boxId: string) => void;
   movePlugBox: (distId: string, boxId: string, dir: -1 | 1) => void;
   setBoxCable: (distId: string, boxId: string, cableTypeId: string | null, lengthM: number) => void;
-  addOutlet: (distId: string, boxId: string) => void;
   removeOutlet: (distId: string, boxId: string, outletId: string) => void;
+  setOutletCount: (distId: string, boxId: string, count: number) => void;
 
   updateOutlet: (distId: string, boxId: string, outletId: string, patch: Partial<Outlet>) => void;
   setQty: (distId: string, boxId: string, outletId: string, fixtureId: string, qty: number) => void;
@@ -174,24 +167,31 @@ export const useStore = create<StoreState>()(
           else box.cable = { cableTypeId, lengthM };
         }),
 
-      addOutlet: (distId, boxId) =>
-        set((s) => {
-          const { box } = locate(s.project, distId, boxId);
-          if (!box) return;
-          const index = box.outlets.length + 1;
-          box.outlets.push(makeOutlet(index, s.project));
-        }),
-
       removeOutlet: (distId, boxId, outletId) =>
         set((s) => {
           const { box } = locate(s.project, distId, boxId);
-          if (!box) return;
+          if (!box || box.outlets.length <= 1) return;
           box.outlets = box.outlets.filter((o) => o.id !== outletId);
+          // Nur neu durchnummerieren – eine bewusst gesetzte Netzphase bleibt stehen.
           box.outlets.forEach((o, i) => {
             o.index = i + 1;
-            if (!o.nameOverride) o.phase = defaultPhaseForIndex(o.index);
           });
           if (s.selectedOutlet?.outletId === outletId) s.selectedOutlet = null;
+        }),
+
+      setOutletCount: (distId, boxId, count) =>
+        set((s) => {
+          const { box } = locate(s.project, distId, boxId);
+          if (!box) return;
+          const target = Math.max(1, Math.min(48, Math.round(count)));
+          while (box.outlets.length > target) box.outlets.pop();
+          while (box.outlets.length < target) box.outlets.push(makeOutlet(box.outlets.length + 1, s.project));
+          box.outlets.forEach((o, i) => {
+            o.index = i + 1;
+          });
+          if (s.selectedOutlet?.boxId === boxId && !box.outlets.some((o) => o.id === s.selectedOutlet?.outletId)) {
+            s.selectedOutlet = null;
+          }
         }),
 
       updateOutlet: (distId, boxId, outletId, patch) =>

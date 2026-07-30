@@ -11,7 +11,7 @@ import {
   type DistributorResult,
   type ProjectResult,
 } from '../lib/calc';
-import { DISTRIBUTOR_PRESETS } from '../lib/defaults';
+import { budgetFromAmps, SUPPLY_PRESETS } from '../lib/defaults';
 import { NumInput, TextInput } from './ui';
 
 export function PlanView({ result }: { result: ProjectResult }) {
@@ -39,7 +39,10 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
   const move = useStore((s) => s.moveDistributor);
   const addPlugBox = useStore((s) => s.addPlugBox);
   const fixtures = useStore((s) => s.project.fixtures);
+  const voltage = useStore((s) => s.project.voltage);
+  const cosPhi = useStore((s) => s.project.cosPhi);
 
+  const project = { voltage, cosPhi };
   const budgetPct = Math.min(100, res.pctOfBudget);
 
   return (
@@ -53,38 +56,40 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
             placeholder="Avo1"
           />
           <div>
-            <input
+            <TextInput
               className="inline"
-              list="dist-presets"
               value={dist.model}
-              placeholder="Modell"
+              onChange={(model) => update(dist.id, { model })}
+              placeholder="Modell / Typ"
               style={{ width: 190, fontSize: 12, color: 'var(--text-2)' }}
-              onChange={(e) => {
-                const model = e.target.value;
-                const preset = DISTRIBUTOR_PRESETS.find((p) => p.model === model);
-                update(dist.id, preset ? { ...preset } : { model });
-              }}
             />
-            <datalist id="dist-presets">
-              {DISTRIBUTOR_PRESETS.map((p) => (
-                <option key={p.model} value={p.model} />
-              ))}
-            </datalist>
           </div>
         </div>
 
         <div className="dist-stats">
           <label className="field">
-            <span>Budget W</span>
-            <NumInput
-              value={dist.maxWatt}
-              onChange={(maxWatt) => update(dist.id, { maxWatt })}
-              min={0}
-              step={1000}
-              blankZero
-              placeholder="ohne"
-              style={{ width: 92 }}
-            />
+            <span>Zuleitung</span>
+            <select
+              value={SUPPLY_PRESETS.find((p) => p.amps === dist.maxAmpsPerPhase)?.label ?? ''}
+              onChange={(e) => {
+                const preset = SUPPLY_PRESETS.find((p) => p.label === e.target.value);
+                if (preset) {
+                  update(dist.id, {
+                    maxAmpsPerPhase: preset.amps,
+                    maxWatt: budgetFromAmps(preset.amps, project),
+                  });
+                }
+              }}
+              style={{ width: 128 }}
+            >
+              <option value="">eigener Wert</option>
+              {SUPPLY_PRESETS.map((p) => (
+                <option key={p.label} value={p.label}>
+                  {p.label} ·{' '}
+                  {(budgetFromAmps(p.amps, project) / 1000).toLocaleString('de-DE', { maximumFractionDigits: 1 })} kW
+                </option>
+              ))}
+            </select>
           </label>
           <label className="field">
             <span>A / Phase</span>
@@ -95,6 +100,18 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
               blankZero
               placeholder="ohne"
               style={{ width: 68 }}
+            />
+          </label>
+          <label className="field">
+            <span>Budget W</span>
+            <NumInput
+              value={dist.maxWatt}
+              onChange={(maxWatt) => update(dist.id, { maxWatt })}
+              min={0}
+              step={1000}
+              blankZero
+              placeholder="ohne"
+              style={{ width: 92 }}
             />
           </label>
           <div className="stat">
@@ -195,7 +212,7 @@ function PlugBoxCard({
   const duplicateBox = useStore((s) => s.duplicatePlugBox);
   const moveBox = useStore((s) => s.movePlugBox);
   const setCable = useStore((s) => s.setBoxCable);
-  const addOutlet = useStore((s) => s.addOutlet);
+  const setOutletCount = useStore((s) => s.setOutletCount);
   const cableTypes = useStore((s) => s.project.cableTypes);
   const maxDropPct = useStore((s) => s.project.maxVoltageDropPct);
 
@@ -231,6 +248,24 @@ function PlugBoxCard({
       </div>
 
       <div className="box-cable">
+        <span>Abgänge</span>
+        <NumInput
+          value={box.outlets.length}
+          onChange={(n) => {
+            const target = Math.max(1, Math.min(48, Math.round(n)));
+            const dropped = box.outlets.slice(target);
+            if (dropped.some((o) => o.loads.length > 0)) {
+              const names = dropped.filter((o) => o.loads.length > 0).map((o) => outletName(box, o));
+              if (!confirm(`${names.join(', ')} ${names.length === 1 ? 'ist' : 'sind'} bestückt und ${names.length === 1 ? 'wird' : 'werden'} entfernt. Fortfahren?`)) return;
+            }
+            setOutletCount(dist.id, box.id, target);
+          }}
+          min={1}
+          max={48}
+          style={{ width: 48 }}
+          title="Anzahl der Abgänge dieser Plugbox"
+        />
+        <span style={{ color: 'var(--line)' }}>|</span>
         <span>Zuleitung</span>
         <select
           value={box.cable?.cableTypeId ?? ''}
@@ -269,12 +304,6 @@ function PlugBoxCard({
       {box.outlets.map((o) => (
         <OutletRow key={o.id} dist={dist} box={box} outlet={o} res={res} fixtures={fixtures} />
       ))}
-
-      <div style={{ padding: '6px 9px' }}>
-        <button className="btn sm" onClick={() => addOutlet(dist.id, box.id)}>
-          + Abgang
-        </button>
-      </div>
     </div>
   );
 }

@@ -19,8 +19,8 @@ Läuft dann auf <http://localhost:5180>.
 
 | Ebene | Bedeutung |
 | --- | --- |
-| **Verteiler** | z. B. `Avo1` / Avolites ART2000. Hat ein Watt-Budget und eine Absicherung je Netzphase. |
-| **Plugbox** | z. B. `FS1`. Enthält n Abgänge (Standard 6) und optional eine Zuleitung für den Spannungsfall. |
+| **Verteiler** | z. B. `Avo1`, Modell frei benennbar. Zuleitung aus der Liste (CEE 16/32/63/125 A, Powerlock 200/400 A) oder eigener Wert; Absicherung je Netzphase und Watt-Budget bleiben einzeln editierbar. |
+| **Plugbox** | z. B. `FS1`. Anzahl der Abgänge frei einstellbar (1–48, Standard 6) – ein 16-A-Verteiler bekommt so einfach 3. Optional eine Zuleitung für den Spannungsfall. |
 | **Abgang** | heißt automatisch `FS1_1` … `FS1_6`, hat Netzphase (L1/L2/L3), Absicherung (16 A) und ein eigenes Ziel-Maximum (2 kW). |
 | **Verbraucher** | Bibliothek mit Name, Watt/Stück, Farbe und optional eigenem cos φ. |
 
@@ -58,8 +58,20 @@ Das Projekt liegt automatisch im `localStorage` des Browsers. **Speichern** legt
 
 ## PDF
 
-**PDF-Export** erzeugt einen Verteilerplan im Querformat: je Verteiler eine Matrix wie in der
-Tabellenansicht (inkl. Zuleitung und Spannungsfall je Plugbox), danach Stückliste und Hinweise.
+**PDF-Export** erzeugt einen Verteilerplan im Querformat:
+
+- Kopf mit Projektdaten und fünf Kennzahlen (Gesamtleistung, Verbraucher, Verteiler, Plugboxen,
+  belegte Abgänge), darunter eine Farblegende der eingesetzten Verbraucher mit Stückzahl.
+- Je Verteiler ein Kennzahlenblock mit gezeichneten Balken für Budget und L1/L2/L3 – jeweils mit
+  Ampere, Prozent und Ampelfarbe – plus Schieflast und Auslastungs-Pille in der Kopfzeile.
+- Je Verteiler die Abgangsmatrix mit farbigen Verbraucherspalten, Zuleitung und Spannungsfall je
+  Plugbox und einem Auslastungsbalken pro Abgang (Markierung = eigenes Ziel-Maximum).
+- Stückliste mit Leistungsanteil und die Hinweisliste.
+
+Das selbst gesetzte Ziel-Maximum je Abgang ist eine reine Planungshilfe und erscheint deshalb
+**nicht** im Report – dort stehen nur echte Grenzwertverletzungen (Absicherung, Budget,
+Phasenabsicherung, Schieflast, Spannungsfall, Kabelbelastbarkeit). In der App wird es weiter
+angezeigt.
 
 ### Erweiterung: Labels
 
