@@ -4,14 +4,26 @@ import { PHASES, type PhaseId } from '../types';
 import { fmtWattPlain, outletName, qtyOf, type ProjectResult } from '../lib/calc';
 import { NumInput } from './ui';
 
+/** Abgang, Ph, Watt, A, Max W */
 const FIXED_COLS = 5;
+const COL_W = [130, 52, 78, 58, 72];
+const FX_COL_W = 58;
 
-function textOn(hex: string) {
+function rgb(hex: string): [number, number, number] {
   const h = hex.replace('#', '');
   const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
   const n = parseInt(full, 16);
-  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
-  return lum > 0.6 ? '#141414' : '#ffffff';
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function tint(hex: string, alpha: number) {
+  const [r, g, b] = rgb(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function textOn(hex: string) {
+  const [r, g, b] = rgb(hex);
+  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#141414' : '#ffffff';
 }
 
 export function MatrixView({ result }: { result: ProjectResult }) {
@@ -21,7 +33,8 @@ export function MatrixView({ result }: { result: ProjectResult }) {
   const selectOutlet = useStore((s) => s.selectOutlet);
 
   const fixtures = project.fixtures;
-  const totalCols = FIXED_COLS + fixtures.length;
+  /** +1 für die Füllspalte rechts, die überschüssige Breite schluckt. */
+  const totalCols = FIXED_COLS + fixtures.length + 1;
 
   if (project.distributors.length === 0) {
     return <div className="empty-state">Noch kein Verteiler angelegt.</div>;
@@ -30,27 +43,34 @@ export function MatrixView({ result }: { result: ProjectResult }) {
   return (
     <div className="matrix-wrap">
       <table className="matrix">
+        <colgroup>
+          {COL_W.map((w, i) => (
+            <col key={i} style={{ width: w }} />
+          ))}
+          {fixtures.map((f) => (
+            <col key={f.id} style={{ width: FX_COL_W }} />
+          ))}
+          <col />
+        </colgroup>
         <thead>
           <tr>
-            <th className="name" rowSpan={2}>
-              Abgang
-            </th>
-            <th rowSpan={2}>Ph</th>
-            <th rowSpan={2}>Watt</th>
-            <th rowSpan={2}>A</th>
-            <th rowSpan={2}>Max W</th>
-            {fixtures.map((f) => (
-              <th key={f.id} className="fx" style={{ background: f.color, color: textOn(f.color) }} title={f.name}>
-                {f.name}
+            <th className="name">Abgang</th>
+            <th>Ph</th>
+            <th>Watt</th>
+            <th>A</th>
+            <th>Max W</th>
+            {fixtures.map((f, i) => (
+              <th
+                key={f.id}
+                className={`fx ${i === 0 ? 'sep' : ''}`}
+                style={{ background: f.color, color: textOn(f.color) }}
+                title={`${f.name} · ${f.watt} W`}
+              >
+                <span className="fx-name">{f.name}</span>
+                <span className="fx-w">{f.watt} W</span>
               </th>
             ))}
-          </tr>
-          <tr>
-            {fixtures.map((f) => (
-              <th key={f.id} className="sub">
-                {f.watt} W
-              </th>
-            ))}
+            <th className="filler" />
           </tr>
         </thead>
         <tbody>
@@ -79,34 +99,25 @@ export function MatrixView({ result }: { result: ProjectResult }) {
                             ` · ${br.drop.cable.name}, ${br.drop.lengthM} m → ΔU ${br.drop.dropPct.toFixed(2)} %`}
                         </td>
                       </tr>
-                      {box.outlets.map((o) => {
+                      {box.outlets.map((o, rowIndex) => {
                         const or = br.outlets.get(o.id)!;
                         const cls = or.status === 'over' ? 'val-over' : or.status === 'warn' ? 'val-warn' : '';
                         return (
-                          <tr key={o.id}>
+                          <tr key={o.id} className={`outlet-row ${rowIndex % 2 ? 'alt' : ''}`}>
                             <td
                               className="name"
-                              onDoubleClick={() =>
-                                selectOutlet({ distId: dist.id, boxId: box.id, outletId: o.id })
-                              }
+                              onDoubleClick={() => selectOutlet({ distId: dist.id, boxId: box.id, outletId: o.id })}
                               title="Doppelklick öffnet den Abgang"
-                              style={{ cursor: 'pointer' }}
                             >
                               {outletName(box, o)}
                             </td>
-                            <td style={{ textAlign: 'center', padding: 0 }}>
+                            <td className="cell-select">
                               <select
+                                className={`phase-sel phase-${o.phase}`}
                                 value={o.phase}
                                 onChange={(e) =>
                                   updateOutlet(dist.id, box.id, o.id, { phase: e.target.value as PhaseId })
                                 }
-                                style={{
-                                  border: 0,
-                                  background: 'transparent',
-                                  padding: '3px 2px',
-                                  fontSize: 11,
-                                  width: 46,
-                                }}
                               >
                                 {PHASES.map((p) => (
                                   <option key={p} value={p}>
@@ -117,36 +128,36 @@ export function MatrixView({ result }: { result: ProjectResult }) {
                             </td>
                             <td className={`num ${cls}`}>{or.watt ? fmtWattPlain(or.watt) : ''}</td>
                             <td className={`num ${cls}`}>{or.watt ? or.amps.toFixed(1) : ''}</td>
-                            <td className="num" style={{ padding: 0, width: 62 }}>
+                            <td className="cell-input">
                               <NumInput
                                 value={o.maxWatt}
                                 onChange={(v) => updateOutlet(dist.id, box.id, o.id, { maxWatt: v })}
                                 min={0}
                                 step={100}
                                 blankZero
-                                style={{
-                                  width: '100%',
-                                  border: 0,
-                                  background: 'transparent',
-                                  textAlign: 'right',
-                                  padding: '4px 6px',
-                                }}
+                                onFocus={(e) => e.currentTarget.select()}
                               />
                             </td>
-                            {fixtures.map((f) => {
+                            {fixtures.map((f, i) => {
                               const q = qtyOf(o, f.id);
                               return (
-                                <td className={`qty ${q > 0 ? 'has' : ''}`} key={f.id}>
+                                <td
+                                  className={`qty ${q > 0 ? 'has' : ''} ${i === 0 ? 'sep' : ''}`}
+                                  key={f.id}
+                                  style={{ background: tint(f.color, q > 0 ? 0.26 : 0.05) }}
+                                >
                                   <NumInput
                                     value={q}
                                     onChange={(v) => setQty(dist.id, box.id, o.id, f.id, v)}
                                     min={0}
                                     blankZero
+                                    title={`${f.name} · ${f.watt} W`}
                                     onFocus={(e) => e.currentTarget.select()}
                                   />
                                 </td>
                               );
                             })}
+                            <td className="filler" />
                           </tr>
                         );
                       })}
@@ -162,11 +173,12 @@ export function MatrixView({ result }: { result: ProjectResult }) {
             <td className="num">{fmtWattPlain(result.watt)}</td>
             <td />
             <td />
-            {fixtures.map((f) => (
-              <td className="num" key={f.id}>
+            {fixtures.map((f, i) => (
+              <td className={`num ${i === 0 ? 'sep' : ''}`} key={f.id} style={{ background: tint(f.color, 0.14) }}>
                 {result.fixtureTotals.get(f.id)?.qty || ''}
               </td>
             ))}
+            <td className="filler" />
           </tr>
         </tbody>
       </table>

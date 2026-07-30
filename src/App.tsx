@@ -6,7 +6,7 @@ import { PlanView } from './components/PlanView';
 import { MatrixView } from './components/MatrixView';
 import { CableLibrary, FixtureLibrary } from './components/Library';
 import { SettingsView } from './components/SettingsView';
-import { IssueList } from './components/IssueList';
+import { IssueDock } from './components/IssueList';
 import { OutletModal } from './components/OutletModal';
 
 type Tab = 'plan' | 'matrix' | 'fixtures' | 'cables' | 'settings';
@@ -39,7 +39,6 @@ export default function App() {
         ))}
       </nav>
       <main className="content">
-        {(tab === 'plan' || tab === 'matrix') && <IssueList issues={result.issues} />}
         {tab === 'plan' && <PlanView result={result} />}
         {tab === 'matrix' && <MatrixView result={result} />}
         {tab === 'fixtures' && <FixtureLibrary result={result} />}
@@ -47,6 +46,7 @@ export default function App() {
         {tab === 'settings' && <SettingsView />}
       </main>
       <OutletModal />
+      {(tab === 'plan' || tab === 'matrix') && <IssueDock issues={result.issues} />}
     </div>
   );
 }

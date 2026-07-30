@@ -46,9 +46,10 @@ sie lässt sich pro Abgang überschreiben (Klick auf das Phasen-Badge).
 - κ = 56 m/(Ω·mm²) für Kupfer bei 20 °C; betriebswarm ist 48 der konservativere Wert
   (in den Einstellungen änderbar).
 
-Warnungen und Fehler stehen über Plan und Tabelle: überschrittene Absicherung, überschrittenes
-Ziel-Maximum, Verteilerbudget, Phasenabsicherung, Schieflast > 25 %, Spannungsfall über Grenzwert
-und Kabel über Strombelastbarkeit.
+Warnungen und Fehler sitzen als Pille unten rechts und klappen als Overlay auf – bewusst außerhalb
+des Layoutflusses, damit beim Tippen nichts verspringt. Geprüft werden: überschrittene Absicherung,
+überschrittenes Ziel-Maximum, Verteilerbudget, Phasenabsicherung, Schieflast > 25 %, Spannungsfall
+über Grenzwert und Kabel über Strombelastbarkeit.
 
 ## Speichern
 

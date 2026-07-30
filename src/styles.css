@@ -527,23 +527,39 @@ label.field > span {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--panel);
+  /* Begrenzte Höhe, damit der Kopf beim Scrollen stehen bleibt. */
+  max-height: calc(100vh - 118px);
 }
 
 table.matrix {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12px;
+  /* Feste Spaltenbreiten aus <colgroup>; die Füllspalte rechts nimmt den Rest. */
   width: max-content;
   min-width: 100%;
 }
 
 table.matrix th,
 table.matrix td {
-  border-right: 1px solid var(--line-soft);
-  border-bottom: 1px solid var(--line-soft);
-  padding: 3px 6px;
+  border-right: 1px solid #313d54;
+  border-bottom: 1px solid #293346;
+  padding: 4px 7px;
+  height: 27px;
   text-align: right;
   white-space: nowrap;
+}
+
+/* Kräftige Trennung zwischen Kennzahlen und Verbraucherspalten */
+table.matrix th.sep,
+table.matrix td.sep {
+  border-left: 2px solid #4a5a80;
+}
+
+table.matrix th.filler,
+table.matrix td.filler {
+  border-right: 0;
+  padding: 0;
 }
 
 table.matrix thead th {
@@ -554,19 +570,27 @@ table.matrix thead th {
   font-size: 10.5px;
   text-align: center;
   padding: 5px 4px;
+  border-bottom: 2px solid #4a5a80;
 }
 
 table.matrix th.fx {
-  font-weight: 700;
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding: 3px 3px;
+  line-height: 1.15;
 }
 
-table.matrix th.sub {
-  top: 26px;
-  font-weight: 500;
-  color: var(--text-2);
+table.matrix th.fx .fx-name {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 700;
+  white-space: normal;
+  overflow: hidden;
+  letter-spacing: 0.2px;
+}
+
+table.matrix th.fx .fx-w {
+  display: block;
+  font-size: 9px;
+  opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
 
@@ -577,6 +601,12 @@ table.matrix th.name {
   left: 0;
   z-index: 2;
   background: var(--panel);
+  font-weight: 600;
+  border-right: 2px solid #4a5a80;
+}
+
+table.matrix td.name {
+  cursor: pointer;
 }
 
 table.matrix thead th.name {
@@ -584,16 +614,36 @@ table.matrix thead th.name {
   background: var(--panel-2);
 }
 
+/* Zeilen abwechselnd tönen, damit sich Abgänge auseinanderhalten lassen */
+table.matrix tbody tr.outlet-row,
+table.matrix tbody tr.outlet-row td.name {
+  background: #161c27;
+}
+
+table.matrix tbody tr.outlet-row.alt,
+table.matrix tbody tr.outlet-row.alt td.name {
+  background: #1b2231;
+}
+
+table.matrix tbody tr.outlet-row:hover,
+table.matrix tbody tr.outlet-row:hover td.name,
+table.matrix tbody tr.outlet-row:focus-within,
+table.matrix tbody tr.outlet-row:focus-within td.name {
+  background: #24304a;
+}
+
 table.matrix tr.group td {
-  background: var(--panel-2);
+  background: #212a3b;
   font-weight: 700;
   text-align: left;
+  border-bottom: 2px solid #4a5a80;
 }
 
 table.matrix tr.group td:first-child {
   position: sticky;
   left: 0;
   z-index: 2;
+  border-right: 2px solid #4a5a80;
 }
 
 table.matrix tr.group td.wide {
@@ -605,7 +655,7 @@ table.matrix tr.group td.wide {
 table.matrix tr.totals td {
   background: #263148;
   font-weight: 700;
-  border-top: 2px solid var(--line);
+  border-top: 2px solid #4a5a80;
 }
 
 table.matrix tr.totals td:first-child {
@@ -616,7 +666,7 @@ table.matrix tr.totals td:first-child {
 }
 
 table.matrix tr.dist-row td {
-  background: #263148;
+  background: #2c3852;
   font-weight: 700;
   font-size: 13px;
   text-align: left;
@@ -626,37 +676,93 @@ table.matrix td.num {
   font-variant-numeric: tabular-nums;
 }
 
-table.matrix td.qty {
-  padding: 0;
-  width: 44px;
+/* Eingabefelder füllen ihre Zelle komplett aus – kein Rahmen, kein Spinner */
+table.matrix input[type='number']::-webkit-outer-spin-button,
+table.matrix input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-table.matrix td.qty input {
+table.matrix input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+table.matrix td.qty,
+table.matrix td.cell-input,
+table.matrix td.cell-select {
+  padding: 0;
+}
+
+table.matrix td.qty input,
+table.matrix td.cell-input input {
   width: 100%;
   border: 0;
   background: transparent;
-  text-align: right;
-  padding: 4px 6px;
   border-radius: 0;
+  padding: 4px 6px;
   font-variant-numeric: tabular-nums;
 }
 
-table.matrix td.qty input:focus {
+table.matrix td.qty input {
+  text-align: center;
+  color: var(--muted);
+}
+
+table.matrix td.qty.has input {
+  color: #fff;
+  font-weight: 700;
+  font-size: 12.5px;
+}
+
+table.matrix td.cell-input input {
+  text-align: right;
+  color: var(--text-2);
+}
+
+table.matrix td.qty input:focus,
+table.matrix td.cell-input input:focus {
   background: var(--bg-2);
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  color: #fff;
 }
 
-table.matrix td.qty.has {
-  font-weight: 600;
+table.matrix select.phase-sel {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
 }
 
-table.matrix tbody tr:hover td {
-  background: #1d2534;
+table.matrix select.phase-sel:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-table.matrix tbody tr:hover td.name {
-  background: #1d2534;
+table.matrix select.phase-sel option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+select.phase-sel.phase-L1 {
+  color: #ff9d8d;
+}
+
+select.phase-sel.phase-L2 {
+  color: #ffd76a;
+}
+
+select.phase-sel.phase-L3 {
+  color: #8dbcff;
 }
 
 .val-over {
@@ -735,10 +841,82 @@ table.list input[type='number'] {
 
 /* ── Hinweise ────────────────────────────────────────────────────────── */
 
-.issues {
+/* Fixiert über dem Inhalt – Meldungen dürfen das Layout nie verschieben. */
+.issue-dock {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  width: min(620px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.issue-dock > * {
+  pointer-events: auto;
+}
+
+.issue-panel {
+  width: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 8px;
+  background: rgba(21, 26, 36, 0.96);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  max-height: 42vh;
+  overflow: auto;
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.issue-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.issue-toggle.error {
+  border-color: #5c2528;
+  background: #2a1618;
+  color: #ffb4b4;
+}
+
+.issue-toggle.warn {
+  border-color: #5c4f20;
+  background: #2a2413;
+  color: #f2dc9a;
+}
+
+.issue-toggle .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.issue-toggle .dot.err {
+  background: var(--danger);
+}
+
+.issue-toggle .dot.wrn {
+  background: var(--warn);
+}
+
+.issue-toggle .caret {
+  opacity: 0.7;
+  margin-left: 2px;
 }
 
 .issue {
