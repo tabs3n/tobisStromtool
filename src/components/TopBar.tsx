@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 import { cloudConfigured, createCloudProject, getPassword } from '../lib/cloud';
 import { setCloudHash } from '../lib/useCloudSync';
@@ -11,9 +11,51 @@ const CLOUD_LABEL = {
   idle: 'Online',
   loading: 'Lade …',
   saving: 'Speichert …',
-  synced: 'Online · synchron',
+  synced: 'Online ✓',
   error: 'Sync-Fehler',
 } as const;
+
+function FileMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  return (
+    <div className="menu" ref={ref}>
+      <button className="btn" onClick={() => setOpen((o) => !o)}>
+        Datei ▾
+      </button>
+      {open && (
+        <div className="menu-list">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TopBar({ result }: { result: ProjectResult }) {
   const project = useStore((s) => s.project);
@@ -66,21 +108,21 @@ export function TopBar({ result }: { result: ProjectResult }) {
         value={project.name}
         onChange={(name) => patchProject({ name })}
         placeholder="Projektname"
-        style={{ fontWeight: 600, fontSize: 14, width: 200 }}
+        style={{ fontWeight: 600, fontSize: 14, width: 170 }}
       />
       <TextInput
         className="inline"
         value={project.venue}
         onChange={(venue) => patchProject({ venue })}
         placeholder="Location"
-        style={{ width: 150, color: 'var(--text-2)' }}
+        style={{ width: 120, color: 'var(--text-2)' }}
       />
       <TextInput
         className="inline"
         value={project.date}
         onChange={(date) => patchProject({ date })}
         placeholder="Datum"
-        style={{ width: 100, color: 'var(--text-2)' }}
+        style={{ width: 90, color: 'var(--text-2)' }}
       />
 
       <span className="spacer" />
@@ -119,46 +161,35 @@ export function TopBar({ result }: { result: ProjectResult }) {
         title={cloudId ? 'Link zum gemeinsamen Bearbeiten kopieren' : 'Projekt online speichern und Link zum Teilen erzeugen'}
         onClick={share}
       >
-        {sharing ? '…' : copied ? 'Link kopiert' : cloudId ? 'Link kopieren' : 'Online teilen'}
+        {sharing ? '…' : copied ? 'Kopiert ✓' : cloudId ? 'Link' : 'Online teilen'}
       </button>
-      {cloudId && (
-        <button
-          className="btn"
-          title="Verbindung trennen – das Projekt bleibt als lokale Kopie erhalten"
-          onClick={() => setCloudHash(null)}
-        >
-          Offline
-        </button>
-      )}
-      <button
-        className="btn"
-        onClick={() => {
-          if (!confirm('Neues Projekt anlegen? Nicht gespeicherte Änderungen gehen verloren.')) return;
-          setCloudHash(null);
-          newProject();
-        }}
-      >
-        Neu
-      </button>
-      <button
-        className="btn"
-        onClick={() =>
-          pickProjectFile(
-            (p) => {
+      <FileMenu
+        items={[
+          {
+            label: 'Neues Projekt',
+            onClick: () => {
+              if (!confirm('Neues Projekt anlegen? Nicht gespeicherte Änderungen gehen verloren.')) return;
               setCloudHash(null);
-              replaceProject(p);
+              newProject();
             },
-            (msg) => alert(`Datei konnte nicht geladen werden:\n${msg}`),
-          )
-        }
-      >
-        Öffnen
-      </button>
-      <button className="btn" onClick={() => saveProjectFile(project)}>
-        Speichern
-      </button>
+          },
+          {
+            label: 'Datei öffnen …',
+            onClick: () =>
+              pickProjectFile(
+                (p) => {
+                  setCloudHash(null);
+                  replaceProject(p);
+                },
+                (msg) => alert(`Datei konnte nicht geladen werden:\n${msg}`),
+              ),
+          },
+          { label: 'Als Datei speichern', onClick: () => saveProjectFile(project) },
+          ...(cloudId ? [{ label: 'Offline weiterarbeiten', onClick: () => setCloudHash(null) }] : []),
+        ]}
+      />
       <button className="btn primary" onClick={() => exportPlanPdf(project)}>
-        PDF-Export
+        PDF
       </button>
     </div>
   );

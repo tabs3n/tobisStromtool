@@ -1136,3 +1136,51 @@ table.list input[type='number'] {
   justify-content: flex-end;
   white-space: nowrap;
 }
+
+/* ── Kompakte Kopfzeile ──────────────────────────────────────────────── */
+
+.topbar {
+  gap: 8px;
+  padding: 4px 12px;
+}
+
+.topbar .btn {
+  padding: 3px 9px;
+  font-size: 13px;
+}
+
+.tab {
+  padding: 5px 12px;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+
+.menu-list button {
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.menu-list button:hover {
+  background: var(--panel-2);
+}
