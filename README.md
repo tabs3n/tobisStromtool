@@ -56,6 +56,24 @@ des Layoutflusses, damit beim Tippen nichts verspringt. Geprüft werden: übersc
 Das Projekt liegt automatisch im `localStorage` des Browsers. **Speichern** legt eine
 `*.stromtool.json` ab, **Öffnen** lädt sie wieder – das ist der Weg für Backups und zum Weitergeben.
 
+## Online teilen (gemeinsam bearbeiten)
+
+**Online teilen** legt das Projekt in Supabase ab und kopiert einen Link (`…/#p=<uuid>`). Wer den
+Link öffnet, lädt das Projekt und bearbeitet es live mit: Änderungen gehen per Broadcast-Kanal sofort
+an alle, zusätzlich wird der Stand (entprellt) in der Datenbank gespeichert. **Offline** trennt die
+Verbindung und behält eine lokale Kopie.
+
+Einrichtung (einmalig):
+
+1. Auf <https://supabase.com> ein Projekt anlegen.
+2. [supabase/schema.sql](supabase/schema.sql) im SQL-Editor ausführen.
+3. `.env.example` nach `.env.local` kopieren und URL + anon key (Project Settings → API) eintragen.
+4. `npm run dev` neu starten. Beim Deployen dieselben zwei Variablen als Build-Env setzen.
+
+Hinweise: Die Tabelle ist per RLS gesperrt, Zugriff nur über drei Funktionen mit der UUID – wer den
+Link hat, kann lesen **und** schreiben, aufgelistet wird nichts. Abgeglichen wird immer das ganze
+Projekt (letzter Schreiber gewinnt); gleichzeitiges Bearbeiten *derselben* Stelle überschreibt sich also.
+
 ## PDF
 
 **PDF-Export** erzeugt einen Verteilerplan im Querformat:

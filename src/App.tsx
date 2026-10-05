@@ -8,6 +8,7 @@ import { CableLibrary, FixtureLibrary } from './components/Library';
 import { SettingsView } from './components/SettingsView';
 import { IssueDock } from './components/IssueList';
 import { OutletModal } from './components/OutletModal';
+import { useCloudSync } from './lib/useCloudSync';
 
 type Tab = 'plan' | 'matrix' | 'fixtures' | 'cables' | 'settings';
 
@@ -20,6 +21,7 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export default function App() {
+  useCloudSync();
   const project = useStore((s) => s.project);
   const [tab, setTab] = useState<Tab>('plan');
   const result = useMemo(() => calcProject(project), [project]);

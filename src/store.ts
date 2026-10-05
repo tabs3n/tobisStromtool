@@ -21,6 +21,15 @@ function locate(project: Project, distId: string, boxId?: string, outletId?: str
 export interface StoreState {
   project: Project;
   selectedOutlet: { distId: string; boxId: string; outletId: string } | null;
+  /** ID des online geteilten Projekts (aus dem URL-Hash), sonst null. */
+  cloudId: string | null;
+  cloudStatus: 'idle' | 'loading' | 'saving' | 'synced' | 'error';
+  cloudError: string | null;
+
+  setCloud: (id: string | null) => void;
+  setCloudStatus: (status: StoreState['cloudStatus'], error?: string) => void;
+  /** Projektstand von einem anderen Bearbeiter übernehmen (Auswahl bleibt erhalten). */
+  applyRemoteProject: (p: Project) => void;
 
   replaceProject: (p: Project) => void;
   newProject: () => void;
@@ -69,6 +78,30 @@ export const useStore = create<StoreState>()(
     immer((set) => ({
       project: createEmptyProject(),
       selectedOutlet: null,
+      cloudId: null,
+      cloudStatus: 'idle',
+      cloudError: null,
+
+      setCloud: (id) =>
+        set((s) => {
+          if (s.cloudId === id) return;
+          s.cloudId = id;
+          s.cloudStatus = 'idle';
+          s.cloudError = null;
+        }),
+
+      setCloudStatus: (status, error) =>
+        set((s) => {
+          s.cloudStatus = status;
+          s.cloudError = error ?? null;
+        }),
+
+      applyRemoteProject: (p) =>
+        set((s) => {
+          s.project = p;
+          const sel = s.selectedOutlet;
+          if (sel && !locate(p, sel.distId, sel.boxId, sel.outletId).outlet) s.selectedOutlet = null;
+        }),
 
       replaceProject: (p) =>
         set((s) => {
