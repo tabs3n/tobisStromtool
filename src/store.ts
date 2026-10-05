@@ -25,7 +25,12 @@ export interface StoreState {
   cloudId: string | null;
   cloudStatus: 'idle' | 'loading' | 'saving' | 'synced' | 'error';
   cloudError: string | null;
+  /** Erhöht sich, um das Laden des Online-Projekts erneut anzustoßen (z. B. nach Passworteingabe). */
+  cloudNonce: number;
+  browserOpen: boolean;
 
+  retryCloud: () => void;
+  setBrowserOpen: (open: boolean) => void;
   setCloud: (id: string | null) => void;
   setCloudStatus: (status: StoreState['cloudStatus'], error?: string) => void;
   /** Projektstand von einem anderen Bearbeiter übernehmen (Auswahl bleibt erhalten). */
@@ -81,6 +86,18 @@ export const useStore = create<StoreState>()(
       cloudId: null,
       cloudStatus: 'idle',
       cloudError: null,
+      cloudNonce: 0,
+      browserOpen: false,
+
+      retryCloud: () =>
+        set((s) => {
+          s.cloudNonce += 1;
+        }),
+
+      setBrowserOpen: (open) =>
+        set((s) => {
+          s.browserOpen = open;
+        }),
 
       setCloud: (id) =>
         set((s) => {

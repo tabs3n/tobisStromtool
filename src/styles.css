@@ -1083,3 +1083,56 @@ table.list input[type='number'] {
   border: 1px dashed var(--line);
   border-radius: var(--radius);
 }
+
+/* ── Projekt-Browser ─────────────────────────────────────────────────── */
+
+.pb-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.pb-gate p,
+.pb-muted {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.pb-gate input {
+  width: 100%;
+}
+
+.pb-error {
+  color: var(--danger);
+  margin: 4px 0 8px;
+}
+
+.pb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.pb-table th {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+
+.pb-table td {
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.pb-table tr.current td {
+  background: rgba(80, 140, 255, 0.1);
+}
+
+.pb-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  white-space: nowrap;
+}

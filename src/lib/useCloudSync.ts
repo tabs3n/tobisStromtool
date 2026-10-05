@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useStore } from '../store';
-import { joinCloudChannel, loadCloudProject, saveCloudProject } from './cloud';
+import { PASSWORD_MISSING, joinCloudChannel, loadCloudProject, saveCloudProject } from './cloud';
 
 /** Projekt-ID aus dem URL-Hash (#p=<uuid>). */
 export function readCloudId(): string | null {
@@ -18,6 +18,7 @@ const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Hält das lokale Projekt und die Online-Kopie (falls ein #p=-Link aktiv ist) synchron. */
 export function useCloudSync() {
   const cloudId = useStore((s) => s.cloudId);
+  const cloudNonce = useStore((s) => s.cloudNonce);
   const setCloud = useStore((s) => s.setCloud);
 
   useEffect(() => {
@@ -36,6 +37,12 @@ export function useCloudSync() {
     let synced = useStore.getState().project;
     const status = (s: Parameters<ReturnType<typeof useStore.getState>['setCloudStatus']>[0], e?: string) =>
       alive && useStore.getState().setCloudStatus(s, e);
+    const fail = (e: unknown) => {
+      const m = msg(e);
+      status('error', m);
+      // Passwort fehlt oder ist falsch → Projekt-Browser mit Passwortabfrage öffnen.
+      if (m === PASSWORD_MISSING || m === 'Falsches Passwort') useStore.getState().setBrowserOpen(true);
+    };
 
     status('loading');
     loadCloudProject(cloudId)
@@ -50,7 +57,7 @@ export function useCloudSync() {
         });
         status('synced');
       })
-      .catch((e) => status('error', msg(e)));
+      .catch(fail);
 
     const unsub = useStore.subscribe((state, prev) => {
       if (!channel || state.project === prev.project || state.project === synced) return;
@@ -64,7 +71,7 @@ export function useCloudSync() {
           await saveCloudProject(cloudId, project);
           status('synced');
         } catch (e) {
-          status('error', msg(e));
+          fail(e);
         }
       }, 350);
     });
@@ -75,5 +82,5 @@ export function useCloudSync() {
       unsub();
       channel?.close();
     };
-  }, [cloudId]);
+  }, [cloudId, cloudNonce]);
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store';
-import { cloudConfigured, createCloudProject } from '../lib/cloud';
+import { cloudConfigured, createCloudProject, getPassword } from '../lib/cloud';
 import { setCloudHash } from '../lib/useCloudSync';
 import { fmtW, type ProjectResult } from '../lib/calc';
 import { pickProjectFile, saveProjectFile } from '../lib/projectFile';
@@ -24,6 +24,7 @@ export function TopBar({ result }: { result: ProjectResult }) {
   const cloudId = useStore((s) => s.cloudId);
   const cloudStatus = useStore((s) => s.cloudStatus);
   const cloudError = useStore((s) => s.cloudError);
+  const setBrowserOpen = useStore((s) => s.setBrowserOpen);
   const [sharing, setSharing] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -35,8 +36,12 @@ export function TopBar({ result }: { result: ProjectResult }) {
           alert('Online-Speicher ist nicht eingerichtet.\nSiehe README: Abschnitt „Online teilen“.');
           return;
         }
+        if (!getPassword()) {
+          setBrowserOpen(true);
+          return;
+        }
         setSharing(true);
-        id = await createCloudProject(project);
+        id =await createCloudProject(project);
         setCloudHash(id);
       }
       const link = `${window.location.origin}${window.location.pathname}#p=${id}`;
@@ -105,6 +110,9 @@ export function TopBar({ result }: { result: ProjectResult }) {
           {CLOUD_LABEL[cloudStatus]}
         </span>
       )}
+      <button className="btn" title="Alle Online-Projekte anzeigen" onClick={() => setBrowserOpen(true)}>
+        Projekte
+      </button>
       <button
         className="btn"
         disabled={sharing}

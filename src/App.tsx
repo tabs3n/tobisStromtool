@@ -8,6 +8,7 @@ import { CableLibrary, FixtureLibrary } from './components/Library';
 import { SettingsView } from './components/SettingsView';
 import { IssueDock } from './components/IssueList';
 import { OutletModal } from './components/OutletModal';
+import { ProjectBrowser } from './components/ProjectBrowser';
 import { useCloudSync } from './lib/useCloudSync';
 
 type Tab = 'plan' | 'matrix' | 'fixtures' | 'cables' | 'settings';
@@ -48,6 +49,7 @@ export default function App() {
         {tab === 'settings' && <SettingsView />}
       </main>
       <OutletModal />
+      <ProjectBrowser />
       {(tab === 'plan' || tab === 'matrix') && <IssueDock issues={result.issues} />}
     </div>
   );

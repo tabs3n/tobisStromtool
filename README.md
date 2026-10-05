@@ -56,23 +56,30 @@ des Layoutflusses, damit beim Tippen nichts verspringt. Geprüft werden: übersc
 Das Projekt liegt automatisch im `localStorage` des Browsers. **Speichern** legt eine
 `*.stromtool.json` ab, **Öffnen** lädt sie wieder – das ist der Weg für Backups und zum Weitergeben.
 
-## Online teilen (gemeinsam bearbeiten)
+## Online-Projekte (Projekt-Browser & gemeinsam bearbeiten)
 
-**Online teilen** legt das Projekt in Supabase ab und kopiert einen Link (`…/#p=<uuid>`). Wer den
-Link öffnet, lädt das Projekt und bearbeitet es live mit: Änderungen gehen per Broadcast-Kanal sofort
-an alle, zusätzlich wird der Stand (entprellt) in der Datenbank gespeichert. **Offline** trennt die
-Verbindung und behält eine lokale Kopie.
+**Projekte** öffnet den Projekt-Browser: alle online gespeicherten Projekte mit Name, Location, Datum
+und letzter Änderung – öffnen, löschen oder das aktuelle Projekt online speichern. **Online teilen**
+kopiert zusätzlich den Link (`…/#p=<uuid>`) des geöffneten Projekts. Wer ein Projekt geöffnet hat,
+bearbeitet es live mit den anderen: Änderungen gehen per Broadcast-Kanal sofort an alle, zusätzlich
+wird der Stand (entprellt) in der Datenbank gespeichert. **Offline** trennt die Verbindung und behält
+eine lokale Kopie.
+
+Zugang: ein gemeinsames **Team-Passwort**, das beim ersten Mal abgefragt und nur im Browser gemerkt
+wird. Ohne Passwort liefert die Datenbank nichts – auch nicht über einen Link.
 
 Einrichtung (einmalig):
 
 1. Auf <https://supabase.com> ein Projekt anlegen.
 2. [supabase/schema.sql](supabase/schema.sql) im SQL-Editor ausführen.
-3. `.env.example` nach `.env.local` kopieren und URL + anon key (Project Settings → API) eintragen.
-4. `npm run dev` neu starten. Beim Deployen dieselben zwei Variablen als Build-Env setzen.
+3. Team-Passwort setzen (eigene Abfrage im SQL-Editor): `select public.set_team_password('dein-passwort');`
+4. `.env.example` nach `.env.local` kopieren und URL + Publishable/anon key (Project Settings → API) eintragen.
+5. `npm run dev` neu starten. Beim Deployen dieselben zwei Variablen als Build-Env setzen.
 
-Hinweise: Die Tabelle ist per RLS gesperrt, Zugriff nur über drei Funktionen mit der UUID – wer den
-Link hat, kann lesen **und** schreiben, aufgelistet wird nichts. Abgeglichen wird immer das ganze
-Projekt (letzter Schreiber gewinnt); gleichzeitiges Bearbeiten *derselben* Stelle überschreibt sich also.
+Hinweise: Die Tabellen sind per RLS gesperrt, Zugriff nur über Funktionen, die das Passwort prüfen
+(gespeichert als bcrypt-Hash). Es gibt kein Rate-Limit – ein starkes Passwort wählen. Abgeglichen wird
+immer das ganze Projekt (letzter Schreiber gewinnt); gleichzeitiges Bearbeiten *derselben* Stelle
+überschreibt sich also.
 
 ## PDF
 
