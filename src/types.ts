@@ -28,8 +28,14 @@ export interface Outlet {
   index: number;
   /** Überschreibt den automatischen Namen FS1_<index>. */
   nameOverride?: string;
-  /** Netzphase der Zuleitung. */
+  /** Netzphase der Zuleitung (bei dreiphasigen Abgängen ohne Bedeutung). */
   phase: PhaseId;
+  /** Steckertyp, Schlüssel aus CONNECTORS (z. B. "cee32-3p"); leer bei Plugbox-Abgängen. */
+  connector?: string;
+  /** Drehstrom-Abgang: Last verteilt sich gleichmäßig auf L1/L2/L3, Absicherung gilt je Phase. */
+  threePhase?: boolean;
+  /** Hier angeschlossener Unterverteiler; dessen Last zählt auf diesen Abgang. */
+  child?: Distributor;
   /** Absicherung in Ampere (hart, z. B. 16 A). */
   breakerAmps: number;
   /** Selbst gesetzte Obergrenze in Watt (weich, z. B. 2000 W). */
@@ -65,8 +71,22 @@ export interface Distributor {
   maxWatt: number;
   /** Absicherung je Netzphase in Ampere. 0 = keine Grenze. */
   maxAmpsPerPhase: number;
+  /** Direkte Ausgänge (CEE, Schuko, …) – zusätzlich oder statt Plugboxen. */
+  outlets: Outlet[];
   plugboxes: PlugBox[];
   note?: string;
+}
+
+/** Vorlage für einen Verteilertyp (eingebaut oder selbst gespeichert). */
+export interface DistTemplate {
+  id: string;
+  name: string;
+  model: string;
+  /** Absicherung je Phase (A). */
+  maxAmpsPerPhase: number;
+  /** Ausgänge in Reihenfolge, z. B. 2 × cee32-3p, 6 × cee16-3p, 3 × schuko. */
+  outlets: { connector: string; count: number }[];
+  plugboxes: number;
 }
 
 export interface CableType {
@@ -100,6 +120,8 @@ export interface Project {
   fixtures: FixtureType[];
   cableTypes: CableType[];
   distributors: Distributor[];
+  /** Selbst gespeicherte Verteiler-Vorlagen. */
+  templates?: DistTemplate[];
 }
 
 export type LoadStatus = 'empty' | 'ok' | 'warn' | 'over';

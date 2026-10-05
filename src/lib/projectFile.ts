@@ -1,4 +1,4 @@
-import type { Project } from '../types';
+import type { Distributor, Outlet, Project } from '../types';
 import { createEmptyProject } from './defaults';
 
 export const FILE_FORMAT = 'stromtool.project';
@@ -36,27 +36,46 @@ export function saveProjectFile(project: Project) {
   download(`${safeFilename(project.name)}.stromtool.json`, JSON.stringify(envelope, null, 2), 'application/json');
 }
 
-/** Liest eine Projektdatei und füllt fehlende Felder mit Standardwerten auf. */
-export function parseProjectFile(text: string): Project {
-  const raw = JSON.parse(text) as Partial<FileEnvelope> & Partial<Project>;
-  const candidate = (raw as FileEnvelope).project ?? (raw as Project);
-  if (!candidate || !Array.isArray(candidate.distributors)) {
-    throw new Error('Keine gültige Stromtool-Projektdatei.');
-  }
+function normalizeOutlet(o: Outlet): Outlet {
+  return {
+    ...o,
+    loads: o.loads ?? [],
+    child: o.child ? normalizeDistributor(o.child) : undefined,
+  };
+}
+
+function normalizeDistributor(d: Distributor): Distributor {
+  return {
+    ...d,
+    outlets: (d.outlets ?? []).map(normalizeOutlet),
+    plugboxes: (d.plugboxes ?? []).map((b) => ({
+      ...b,
+      outlets: (b.outlets ?? []).map(normalizeOutlet),
+    })),
+  };
+}
+
+/** Füllt fehlende Felder (ältere Projekte) mit Standardwerten auf. */
+export function normalizeProject(candidate: Project): Project {
   const base = createEmptyProject();
   return {
     ...base,
     ...candidate,
     fixtures: candidate.fixtures ?? base.fixtures,
     cableTypes: candidate.cableTypes ?? base.cableTypes,
-    distributors: candidate.distributors.map((d) => ({
-      ...d,
-      plugboxes: (d.plugboxes ?? []).map((b) => ({
-        ...b,
-        outlets: (b.outlets ?? []).map((o) => ({ ...o, loads: o.loads ?? [] })),
-      })),
-    })),
+    templates: candidate.templates ?? [],
+    distributors: (candidate.distributors ?? []).map(normalizeDistributor),
   };
+}
+
+/** Liest eine Projektdatei. */
+export function parseProjectFile(text: string): Project {
+  const raw = JSON.parse(text) as Partial<FileEnvelope> & Partial<Project>;
+  const candidate = (raw as FileEnvelope).project ?? (raw as Project);
+  if (!candidate || !Array.isArray(candidate.distributors)) {
+    throw new Error('Keine gültige Stromtool-Projektdatei.');
+  }
+  return normalizeProject(candidate);
 }
 
 export function pickProjectFile(onLoad: (p: Project) => void, onError: (msg: string) => void) {

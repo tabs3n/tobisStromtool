@@ -144,3 +144,69 @@ export function Modal({
     </div>
   );
 }
+
+export interface MenuItem {
+  label: string;
+  onClick: () => void;
+  /** Kleine Zusatzzeile unter dem Label. */
+  hint?: string;
+  /** Trennlinie vor diesem Eintrag. */
+  separator?: boolean;
+}
+
+/** Button mit aufklappbarer Liste; schließt bei Klick daneben oder Escape. */
+export function MenuButton({
+  label,
+  items,
+  className = 'btn',
+  align = 'right',
+  title,
+}: {
+  label: ReactNode;
+  items: MenuItem[];
+  className?: string;
+  align?: 'left' | 'right';
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('keydown', esc);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+
+  return (
+    <div className="menu" ref={ref}>
+      <button className={className} title={title} onClick={() => setOpen((o) => !o)}>
+        {label}
+      </button>
+      {open && (
+        <div className={`menu-list ${align}`}>
+          {items.map((it) => (
+            <button
+              key={it.label}
+              className={it.separator ? 'sep' : undefined}
+              onClick={() => {
+                setOpen(false);
+                it.onClick();
+              }}
+            >
+              {it.label}
+              {it.hint && <small>{it.hint}</small>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

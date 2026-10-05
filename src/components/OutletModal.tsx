@@ -1,8 +1,19 @@
 import { useMemo, useState } from 'react';
-import { useStore } from '../store';
+import { DIRECT, useStore } from '../store';
 import { PHASES, type PhaseId } from '../types';
-import { calcOutlet, fixtureIndex, fmtWattPlain, outletName, qtyOf, statusColor } from '../lib/calc';
-import { Modal, NumInput, TextInput } from './ui';
+import {
+  calcDistributor,
+  calcOutlet,
+  fixtureIndex,
+  fmtWattPlain,
+  nameOfOutlet,
+  outletBreakerWatt,
+  qtyOf,
+  statusColor,
+} from '../lib/calc';
+import { allTemplates, CONNECTORS, connectorById, directOutletName } from '../lib/defaults';
+import { findDistributor } from '../lib/tree';
+import { MenuButton, Modal, NumInput, TextInput } from './ui';
 
 export function OutletModal() {
   const sel = useStore((s) => s.selectedOutlet);
@@ -12,23 +23,32 @@ export function OutletModal() {
   const bumpQty = useStore((s) => s.bumpQty);
   const updateOutlet = useStore((s) => s.updateOutlet);
   const clearOutlet = useStore((s) => s.clearOutlet);
+  const attachChild = useStore((s) => s.attachChild);
+  const removeDistributor = useStore((s) => s.removeDistributor);
   const removeOutlet = useStore((s) => s.removeOutlet);
   const [filter, setFilter] = useState('');
 
   const found = useMemo(() => {
     if (!sel) return null;
-    const dist = project.distributors.find((d) => d.id === sel.distId);
-    const box = dist?.plugboxes.find((b) => b.id === sel.boxId);
-    const outlet = box?.outlets.find((o) => o.id === sel.outletId);
-    return dist && box && outlet ? { dist, box, outlet } : null;
+    const dist = findDistributor(project, sel.distId);
+    const box = sel.boxId === DIRECT ? undefined : dist?.plugboxes.find((b) => b.id === sel.boxId);
+    const pool = sel.boxId === DIRECT ? dist?.outlets : box?.outlets;
+    const outlet = pool?.find((o) => o.id === sel.outletId);
+    return dist && outlet ? { dist, box, outlet } : null;
   }, [sel, project]);
 
   if (!sel || !found) return null;
   const { dist, box, outlet } = found;
 
   const fx = fixtureIndex(project);
-  const res = calcOutlet(outlet, fx, project);
-  const breakerWatt = outlet.breakerAmps * project.voltage * project.cosPhi;
+  const isDirect = !box;
+  const res = calcOutlet(outlet, fx, project, outlet.child ? calcDistributor(outlet.child, fx, project) : undefined);
+  const breakerWatt = outletBreakerWatt(outlet, project);
+  const templateItems = allTemplates(project).map((tpl) => ({
+    label: tpl.name,
+    onClick: () => attachChild(dist.id, outlet.id, tpl.id),
+  }));
+  const label = nameOfOutlet(dist, box, outlet);
   const fillPct = breakerWatt > 0 ? Math.min(100, (res.watt / breakerWatt) * 100) : 0;
   const limitPct = breakerWatt > 0 && outlet.maxWatt > 0 ? Math.min(100, (outlet.maxWatt / breakerWatt) * 100) : null;
 
@@ -36,32 +56,34 @@ export function OutletModal() {
     filter.trim() ? f.name.toLowerCase().includes(filter.trim().toLowerCase()) : true,
   );
 
-  const patch = (p: Parameters<typeof updateOutlet>[3]) => updateOutlet(dist.id, box.id, outlet.id, p);
+  const boxId = box?.id ?? DIRECT;
+  const patch = (p: Parameters<typeof updateOutlet>[3]) => updateOutlet(dist.id, boxId, outlet.id, p);
 
   return (
     <Modal
       title={
         <>
-          {outletName(box, outlet)}{' '}
+          {label}{' '}
           <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 13 }}>
-            · {dist.name} / {box.name}
+            · {dist.name}
+            {box && ` / ${box.name}`}
           </span>
         </>
       }
       onClose={() => close(null)}
       footer={
         <>
-          <button className="btn danger" onClick={() => clearOutlet(dist.id, box.id, outlet.id)}>
+          <button className="btn danger" onClick={() => clearOutlet(dist.id, boxId, outlet.id)}>
             Leeren
           </button>
           <button
             className="btn danger"
-            disabled={box.outlets.length <= 1}
-            title={box.outlets.length <= 1 ? 'Die letzte Plugbox-Phase lässt sich nicht entfernen' : undefined}
+            disabled={!!box && box.outlets.length <= 1}
+            title={box && box.outlets.length <= 1 ? 'Die letzte Plugbox-Phase lässt sich nicht entfernen' : undefined}
             onClick={() => {
-              const label = outletName(box, outlet);
-              if (outlet.loads.length > 0 && !confirm(`${label} ist bestückt. Abgang trotzdem entfernen?`)) return;
-              removeOutlet(dist.id, box.id, outlet.id);
+              if (outlet.child && !confirm(`${label} versorgt ${outlet.child.name}. Abgang samt Unterverteiler entfernen?`)) return;
+              if (!outlet.child && outlet.loads.length > 0 && !confirm(`${label} ist bestückt. Abgang trotzdem entfernen?`)) return;
+              removeOutlet(dist.id, boxId, outlet.id);
             }}
           >
             Abgang entfernen
@@ -91,22 +113,49 @@ export function OutletModal() {
           <TextInput
             value={outlet.nameOverride ?? ''}
             onChange={(v) => patch({ nameOverride: v || undefined })}
-            placeholder={`${box.name}_${outlet.index}`}
+            placeholder={box ? `${box.name}_${outlet.index}` : directOutletName(dist, outlet)}
             style={{ width: 130 }}
           />
         </label>
+        {isDirect && (
+          <label className="field">
+            <span>Stecker</span>
+            <select
+              value={outlet.connector ?? ''}
+              onChange={(e) => {
+                const c = connectorById(e.target.value);
+                if (c) patch({ connector: c.id, threePhase: c.threePhase, breakerAmps: c.amps });
+              }}
+            >
+              {CONNECTORS.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {outlet.threePhase ? (
+          <label className="field">
+            <span>Netzphase</span>
+            <select disabled>
+              <option>L1 · L2 · L3</option>
+            </select>
+          </label>
+        ) : (
+          <label className="field">
+            <span>Netzphase</span>
+            <select value={outlet.phase} onChange={(e) => patch({ phase: e.target.value as PhaseId })}>
+              {PHASES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
-          <span>Netzphase</span>
-          <select value={outlet.phase} onChange={(e) => patch({ phase: e.target.value as PhaseId })}>
-            {PHASES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Sicherung A</span>
+          <span>{outlet.threePhase ? 'Sicherung A / Ph.' : 'Sicherung A'}</span>
           <NumInput value={outlet.breakerAmps} onChange={(v) => patch({ breakerAmps: v })} min={0} style={{ width: 70 }} />
         </label>
         <label className="field">
@@ -131,6 +180,27 @@ export function OutletModal() {
         </label>
       </div>
 
+      {outlet.child ? (
+        <div className="empty-state" style={{ textAlign: 'left' }}>
+          Hier hängt der Unterverteiler <b>{outlet.child.name}</b>
+          {outlet.child.model && ` (${outlet.child.model})`}. Seine Last zählt auf diesen Abgang; bestückt wird er
+          im Plan.
+          <div style={{ marginTop: 8 }}>
+            <button
+              className="btn danger"
+              onClick={() => confirm(`Unterverteiler ${outlet.child!.name} entfernen?`) && removeDistributor(outlet.child!.id)}
+            >
+              Unterverteiler entfernen
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {isDirect && (
+            <div className="row" style={{ marginBottom: 8 }}>
+              <MenuButton label="↳ Verteiler anschließen" align="left" items={templateItems} />
+            </div>
+          )}
       <div className="row" style={{ marginBottom: 6 }}>
         <TextInput value={filter} onChange={setFilter} placeholder="Verbraucher suchen…" style={{ flex: 1 }} />
       </div>
@@ -144,17 +214,17 @@ export function OutletModal() {
               <span>{f.name}</span>
               <span className="w">{f.watt} W</span>
               <div className="stepper">
-                <button className="btn icon" onClick={() => bumpQty(dist.id, box.id, outlet.id, f.id, -1)}>
+                <button className="btn icon" onClick={() => bumpQty(dist.id, boxId, outlet.id, f.id, -1)}>
                   −
                 </button>
                 <NumInput
                   value={q}
-                  onChange={(v) => setQty(dist.id, box.id, outlet.id, f.id, v)}
+                  onChange={(v) => setQty(dist.id, boxId, outlet.id, f.id, v)}
                   min={0}
                   blankZero
                   onFocus={(e) => e.currentTarget.select()}
                 />
-                <button className="btn icon" onClick={() => bumpQty(dist.id, box.id, outlet.id, f.id, 1)}>
+                <button className="btn icon" onClick={() => bumpQty(dist.id, boxId, outlet.id, f.id, 1)}>
                   +
                 </button>
               </div>
@@ -163,6 +233,8 @@ export function OutletModal() {
         })}
         {list.length === 0 && <div className="empty-state">Kein Verbraucher gefunden.</div>}
       </div>
+        </>
+      )}
     </Modal>
   );
 }

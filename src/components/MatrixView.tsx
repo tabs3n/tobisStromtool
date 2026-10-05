@@ -1,7 +1,9 @@
 import { Fragment } from 'react';
-import { useStore } from '../store';
-import { PHASES, type PhaseId } from '../types';
-import { fmtWattPlain, outletName, qtyOf, type ProjectResult } from '../lib/calc';
+import { DIRECT, useStore } from '../store';
+import { PHASES, type Outlet, type PhaseId } from '../types';
+import { fmtWattPlain, outletName, qtyOf, type OutletResult, type ProjectResult } from '../lib/calc';
+import { connectorLabel, directOutletName } from '../lib/defaults';
+import { flattenDistributors } from '../lib/tree';
 import { NumInput } from './ui';
 
 /** Abgang, Ph, Watt, A, Max W */
@@ -33,6 +35,7 @@ export function MatrixView({ result }: { result: ProjectResult }) {
   const selectOutlet = useStore((s) => s.selectOutlet);
 
   const fixtures = project.fixtures;
+  const nodes = flattenDistributors(project);
   /** +1 für die Füllspalte rechts, die überschüssige Breite schluckt. */
   const totalCols = FIXED_COLS + fixtures.length + 1;
 
@@ -74,18 +77,105 @@ export function MatrixView({ result }: { result: ProjectResult }) {
           </tr>
         </thead>
         <tbody>
-          {project.distributors.map((dist) => {
+          {nodes.map(({ dist, depth, parentOutlet }) => {
             const dr = result.distributors.get(dist.id)!;
+            const outletRow = (boxId: string, name: string, o: Outlet, or: OutletResult, rowIndex: number) => {
+              const cls = or.status === 'over' ? 'val-over' : or.status === 'warn' ? 'val-warn' : '';
+              return (
+                <tr key={o.id} className={`outlet-row ${rowIndex % 2 ? 'alt' : ''}`}>
+                  <td
+                    className="name"
+                    onDoubleClick={() => selectOutlet({ distId: dist.id, boxId, outletId: o.id })}
+                    title="Doppelklick öffnet den Abgang"
+                  >
+                    {name}
+                    {boxId === DIRECT && <small className="conn">{connectorLabel(o.connector)}</small>}
+                  </td>
+                  <td className="cell-select">
+                    {o.threePhase ? (
+                      <span className="phase-sel phase-3">3~</span>
+                    ) : (
+                      <select
+                        className={`phase-sel phase-${o.phase}`}
+                        value={o.phase}
+                        onChange={(e) => updateOutlet(dist.id, boxId, o.id, { phase: e.target.value as PhaseId })}
+                      >
+                        {PHASES.map((p) => (
+                          <option key={p} value={p}>
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </td>
+                  <td className={`num ${cls}`}>{or.watt ? fmtWattPlain(or.watt) : ''}</td>
+                  <td className={`num ${cls}`}>{or.watt ? or.amps.toFixed(1) : ''}</td>
+                  <td className="cell-input">
+                    <NumInput
+                      value={o.maxWatt}
+                      onChange={(v) => updateOutlet(dist.id, boxId, o.id, { maxWatt: v })}
+                      min={0}
+                      step={100}
+                      blankZero
+                      onFocus={(e) => e.currentTarget.select()}
+                    />
+                  </td>
+                  {o.child ? (
+                    <td className="child-cell" colSpan={fixtures.length + 1}>
+                      ↳ Unterverteiler {o.child.name}
+                      {o.child.model && ` · ${o.child.model}`}
+                    </td>
+                  ) : (
+                    <>
+                      {fixtures.map((fx, i) => {
+                        const q = qtyOf(o, fx.id);
+                        return (
+                          <td
+                            className={`qty ${q > 0 ? 'has' : ''} ${i === 0 ? 'sep' : ''}`}
+                            key={fx.id}
+                            style={{ background: tint(fx.color, q > 0 ? 0.26 : 0.05) }}
+                          >
+                            <NumInput
+                              value={q}
+                              onChange={(v) => setQty(dist.id, boxId, o.id, fx.id, v)}
+                              min={0}
+                              blankZero
+                              title={`${fx.name} · ${fx.watt} W`}
+                              onFocus={(e) => e.currentTarget.select()}
+                            />
+                          </td>
+                        );
+                      })}
+                      <td className="filler" />
+                    </>
+                  )}
+                </tr>
+              );
+            };
+
             return (
               <Fragment key={dist.id}>
                 <tr className="dist-row">
-                  <td colSpan={totalCols}>
-                    {dist.name} — {dist.model} · {fmtWattPlain(dr.watt)} W
+                  <td colSpan={totalCols} style={{ paddingLeft: 10 + depth * 18 }}>
+                    {parentOutlet && '↳ '}
+                    {dist.name}
+                    {dist.model && ` — ${dist.model}`} · {fmtWattPlain(dr.watt)} W
                     {dist.maxWatt > 0 && ` von ${fmtWattPlain(dist.maxWatt)} W · frei ${fmtWattPlain(dr.remainingWatt)} W`}
                     {' · '}
                     {PHASES.map((p) => `${p} ${dr.amps[p].toFixed(1)} A`).join(' / ')}
                   </td>
                 </tr>
+                {dist.outlets.length > 0 && (
+                  <Fragment>
+                    <tr className="group">
+                      <td>Ausgänge</td>
+                      <td className="wide" colSpan={totalCols - 1}>
+                        {dist.outlets.length} Stk.
+                      </td>
+                    </tr>
+                    {dist.outlets.map((o, i) => outletRow(DIRECT, directOutletName(dist, o), o, dr.direct.get(o.id)!, i))}
+                  </Fragment>
+                )}
                 {dist.plugboxes.map((box) => {
                   const br = dr.boxes.get(box.id)!;
                   return (
@@ -99,68 +189,7 @@ export function MatrixView({ result }: { result: ProjectResult }) {
                             ` · ${br.drop.cable.name}, ${br.drop.lengthM} m → ΔU ${br.drop.dropPct.toFixed(2)} %`}
                         </td>
                       </tr>
-                      {box.outlets.map((o, rowIndex) => {
-                        const or = br.outlets.get(o.id)!;
-                        const cls = or.status === 'over' ? 'val-over' : or.status === 'warn' ? 'val-warn' : '';
-                        return (
-                          <tr key={o.id} className={`outlet-row ${rowIndex % 2 ? 'alt' : ''}`}>
-                            <td
-                              className="name"
-                              onDoubleClick={() => selectOutlet({ distId: dist.id, boxId: box.id, outletId: o.id })}
-                              title="Doppelklick öffnet den Abgang"
-                            >
-                              {outletName(box, o)}
-                            </td>
-                            <td className="cell-select">
-                              <select
-                                className={`phase-sel phase-${o.phase}`}
-                                value={o.phase}
-                                onChange={(e) =>
-                                  updateOutlet(dist.id, box.id, o.id, { phase: e.target.value as PhaseId })
-                                }
-                              >
-                                {PHASES.map((p) => (
-                                  <option key={p} value={p}>
-                                    {p}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className={`num ${cls}`}>{or.watt ? fmtWattPlain(or.watt) : ''}</td>
-                            <td className={`num ${cls}`}>{or.watt ? or.amps.toFixed(1) : ''}</td>
-                            <td className="cell-input">
-                              <NumInput
-                                value={o.maxWatt}
-                                onChange={(v) => updateOutlet(dist.id, box.id, o.id, { maxWatt: v })}
-                                min={0}
-                                step={100}
-                                blankZero
-                                onFocus={(e) => e.currentTarget.select()}
-                              />
-                            </td>
-                            {fixtures.map((f, i) => {
-                              const q = qtyOf(o, f.id);
-                              return (
-                                <td
-                                  className={`qty ${q > 0 ? 'has' : ''} ${i === 0 ? 'sep' : ''}`}
-                                  key={f.id}
-                                  style={{ background: tint(f.color, q > 0 ? 0.26 : 0.05) }}
-                                >
-                                  <NumInput
-                                    value={q}
-                                    onChange={(v) => setQty(dist.id, box.id, o.id, f.id, v)}
-                                    min={0}
-                                    blankZero
-                                    title={`${f.name} · ${f.watt} W`}
-                                    onFocus={(e) => e.currentTarget.select()}
-                                  />
-                                </td>
-                              );
-                            })}
-                            <td className="filler" />
-                          </tr>
-                        );
-                      })}
+                      {box.outlets.map((o, i) => outletRow(box.id, outletName(box, o), o, br.outlets.get(o.id)!, i))}
                     </Fragment>
                   );
                 })}

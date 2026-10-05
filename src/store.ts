@@ -1,9 +1,23 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { CableType, Distributor, FixtureType, Outlet, PlugBox, Project } from './types';
-import { createEmptyProject, makeDistributor, makeOutlet, makePlugBox, nextPlugBoxName } from './lib/defaults';
+import type { CableType, DistTemplate, Distributor, FixtureType, Outlet, PlugBox, Project } from './types';
+import {
+  allTemplates,
+  BUILTIN_TEMPLATES,
+  createEmptyProject,
+  makeDirectOutlet,
+  makeDistributorFromTemplate,
+  makeOutlet,
+  makePlugBox,
+  nextPlugBoxName,
+} from './lib/defaults';
+import { findDistributor, flattenDistributors } from './lib/tree';
+import { normalizeProject } from './lib/projectFile';
 import { uid } from './lib/uid';
+
+/** boxId für direkte Verteilerausgänge (statt einer Plugbox-ID). */
+export const DIRECT = '';
 
 interface Locate {
   dist?: Distributor;
@@ -12,10 +26,17 @@ interface Locate {
 }
 
 function locate(project: Project, distId: string, boxId?: string, outletId?: string): Locate {
-  const dist = project.distributors.find((d) => d.id === distId);
+  const dist = findDistributor(project, distId);
   const box = boxId ? dist?.plugboxes.find((b) => b.id === boxId) : undefined;
-  const outlet = outletId ? box?.outlets.find((o) => o.id === outletId) : undefined;
+  const pool = boxId === DIRECT ? dist?.outlets : box?.outlets;
+  const outlet = outletId ? pool?.find((o) => o.id === outletId) : undefined;
   return { dist, box, outlet };
+}
+
+/** Auswahl zurücksetzen, wenn ihr Verteiler oder Abgang nicht mehr existiert. */
+function pruneSelection(s: { project: Project; selectedOutlet: StoreState['selectedOutlet'] }) {
+  const sel = s.selectedOutlet;
+  if (sel && !locate(s.project, sel.distId, sel.boxId, sel.outletId).outlet) s.selectedOutlet = null;
 }
 
 export interface StoreState {
@@ -42,10 +63,16 @@ export interface StoreState {
   /** Setzt das Ziel-Maximum (W) bei allen bestehenden Abgängen. */
   setAllOutletMaxWatt: (maxWatt: number) => void;
 
-  addDistributor: () => void;
+  addDistributor: (templateId?: string) => void;
   updateDistributor: (id: string, patch: Partial<Distributor>) => void;
   removeDistributor: (id: string) => void;
   moveDistributor: (id: string, dir: -1 | 1) => void;
+
+  addDirectOutlet: (distId: string, connectorId: string) => void;
+  /** Hängt einen Unterverteiler (aus Vorlage) an einen direkten Ausgang. */
+  attachChild: (distId: string, outletId: string, templateId: string) => void;
+  saveTemplate: (distId: string, name: string) => void;
+  removeTemplate: (id: string) => void;
 
   addPlugBox: (distId: string) => void;
   updatePlugBox: (distId: string, boxId: string, patch: Partial<PlugBox>) => void;
@@ -141,16 +168,63 @@ export const useStore = create<StoreState>()(
 
       setAllOutletMaxWatt: (maxWatt) =>
         set((s) => {
-          for (const d of s.project.distributors)
-            for (const b of d.plugboxes) for (const o of b.outlets) o.maxWatt = maxWatt;
+          for (const { dist } of flattenDistributors(s.project))
+            for (const b of dist.plugboxes) for (const o of b.outlets) o.maxWatt = maxWatt;
         }),
 
-      addDistributor: () =>
+      addDistributor: (templateId = 'tpl_plugbox') =>
         set((s) => {
-          const n = s.project.distributors.length + 1;
-          const dist = makeDistributor(`Avo${n}`);
-          dist.plugboxes = [makePlugBox(nextPlugBoxName(s.project), s.project)];
-          s.project.distributors.push(dist);
+          const tpl = allTemplates(s.project).find((x) => x.id === templateId) ?? BUILTIN_TEMPLATES[0];
+          const n = flattenDistributors(s.project).length + 1;
+          const name = tpl.id === 'tpl_plugbox' ? `Avo${n}` : `Vt${n}`;
+          s.project.distributors.push(makeDistributorFromTemplate(tpl, name, s.project));
+        }),
+
+      addDirectOutlet: (distId, connectorId) =>
+        set((s) => {
+          const { dist } = locate(s.project, distId);
+          if (!dist) return;
+          const singles = dist.outlets.filter((o) => !o.threePhase).length;
+          dist.outlets.push(makeDirectOutlet(connectorId, dist.outlets.length + 1, singles));
+        }),
+
+      attachChild: (distId, outletId, templateId) =>
+        set((s) => {
+          const { outlet } = locate(s.project, distId, DIRECT, outletId);
+          if (!outlet || outlet.child) return;
+          const tpl = allTemplates(s.project).find((x) => x.id === templateId) ?? BUILTIN_TEMPLATES[0];
+          const name = `Vt${flattenDistributors(s.project).length + 1}`;
+          outlet.child = makeDistributorFromTemplate(tpl, name, s.project, {
+            amps: outlet.breakerAmps,
+            threePhase: !!outlet.threePhase,
+          });
+          outlet.loads = [];
+        }),
+
+      saveTemplate: (distId, name) =>
+        set((s) => {
+          const { dist } = locate(s.project, distId);
+          if (!dist) return;
+          const outlets: DistTemplate['outlets'] = [];
+          for (const o of dist.outlets) {
+            const key = o.connector ?? 'schuko';
+            const last = outlets[outlets.length - 1];
+            if (last && last.connector === key) last.count += 1;
+            else outlets.push({ connector: key, count: 1 });
+          }
+          (s.project.templates ??= []).push({
+            id: uid('tpl'),
+            name: name.trim() || dist.name,
+            model: dist.model,
+            maxAmpsPerPhase: dist.maxAmpsPerPhase,
+            outlets,
+            plugboxes: dist.plugboxes.length,
+          });
+        }),
+
+      removeTemplate: (id) =>
+        set((s) => {
+          s.project.templates = (s.project.templates ?? []).filter((x) => x.id !== id);
         }),
 
       updateDistributor: (id, patch) =>
@@ -161,8 +235,13 @@ export const useStore = create<StoreState>()(
 
       removeDistributor: (id) =>
         set((s) => {
-          s.project.distributors = s.project.distributors.filter((d) => d.id !== id);
-          if (s.selectedOutlet?.distId === id) s.selectedOutlet = null;
+          const top = s.project.distributors.findIndex((d) => d.id === id);
+          if (top >= 0) s.project.distributors.splice(top, 1);
+          else {
+            const node = flattenDistributors(s.project).find((n) => n.dist.id === id);
+            if (node?.parentOutlet) node.parentOutlet.child = undefined;
+          }
+          pruneSelection(s);
         }),
 
       moveDistributor: (id, dir) =>
@@ -227,14 +306,17 @@ export const useStore = create<StoreState>()(
 
       removeOutlet: (distId, boxId, outletId) =>
         set((s) => {
-          const { box } = locate(s.project, distId, boxId);
-          if (!box || box.outlets.length <= 1) return;
-          box.outlets = box.outlets.filter((o) => o.id !== outletId);
+          const { dist, box } = locate(s.project, distId, boxId);
+          const pool = boxId === DIRECT ? dist?.outlets : box?.outlets;
+          if (!pool || (boxId !== DIRECT && pool.length <= 1)) return;
+          const at = pool.findIndex((o) => o.id === outletId);
+          if (at < 0) return;
+          pool.splice(at, 1);
           // Nur neu durchnummerieren – eine bewusst gesetzte Netzphase bleibt stehen.
-          box.outlets.forEach((o, i) => {
+          pool.forEach((o, i) => {
             o.index = i + 1;
           });
-          if (s.selectedOutlet?.outletId === outletId) s.selectedOutlet = null;
+          pruneSelection(s);
         }),
 
       setOutletCount: (distId, boxId, count) =>
@@ -315,9 +397,9 @@ export const useStore = create<StoreState>()(
       removeFixture: (id) =>
         set((s) => {
           s.project.fixtures = s.project.fixtures.filter((f) => f.id !== id);
-          for (const d of s.project.distributors)
-            for (const b of d.plugboxes)
-              for (const o of b.outlets) o.loads = o.loads.filter((l) => l.fixtureId !== id);
+          for (const { dist } of flattenDistributors(s.project))
+            for (const o of [...dist.outlets, ...dist.plugboxes.flatMap((b) => b.outlets)])
+              o.loads = o.loads.filter((l) => l.fixtureId !== id);
         }),
 
       moveFixture: (id, dir) =>
@@ -349,8 +431,8 @@ export const useStore = create<StoreState>()(
       removeCableType: (id) =>
         set((s) => {
           s.project.cableTypes = s.project.cableTypes.filter((c) => c.id !== id);
-          for (const d of s.project.distributors)
-            for (const b of d.plugboxes) if (b.cable?.cableTypeId === id) b.cable = undefined;
+          for (const { dist } of flattenDistributors(s.project))
+            for (const b of dist.plugboxes) if (b.cable?.cableTypeId === id) b.cable = undefined;
         }),
 
       selectOutlet: (sel) =>
@@ -358,6 +440,14 @@ export const useStore = create<StoreState>()(
           s.selectedOutlet = sel;
         }),
     })),
-    { name: 'stromtool-project-v1', partialize: (s) => ({ project: s.project }) as never },
+    {
+      name: 'stromtool-project-v1',
+      partialize: (s) => ({ project: s.project }) as never,
+      // Ältere gespeicherte Projekte kennen direkte Ausgänge und Vorlagen noch nicht.
+      merge: (persisted, current) => {
+        const p = (persisted as { project?: Project } | undefined)?.project;
+        return { ...current, project: p ? normalizeProject(p) : current.project };
+      },
+    },
   ),
 );

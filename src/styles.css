@@ -1184,3 +1184,78 @@ table.list input[type='number'] {
 .menu-list button:hover {
   background: var(--panel-2);
 }
+
+.menu-list.left {
+  right: auto;
+  left: 0;
+}
+
+.menu-list button.sep {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 5px 5px;
+  padding-top: 8px;
+}
+
+.menu-list button small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ── Direkte Ausgänge & Unterverteiler ───────────────────────────────── */
+
+.phase-3 {
+  color: #d9c2ff;
+  border-color: #4d3a75;
+  background: #241b38;
+}
+
+span.phase-sel {
+  display: block;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 0;
+}
+
+.conn {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.add-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: start;
+}
+
+.dist.child {
+  margin: 0;
+  background: var(--bg-2);
+}
+
+.children {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 12px 12px 28px;
+  border-left: 2px solid var(--accent-dim);
+  margin-left: 12px;
+}
+
+.child-label {
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+td.child-cell {
+  color: var(--accent);
+  font-style: italic;
+  padding-left: 12px;
+}

@@ -1,4 +1,5 @@
 import { useStore } from '../store';
+import { flattenDistributors } from '../lib/tree';
 import { fmtWattPlain, type ProjectResult } from '../lib/calc';
 import { NumInput, TextInput } from './ui';
 
@@ -105,7 +106,7 @@ export function CableLibrary() {
   const remove = useStore((s) => s.removeCableType);
 
   const usage = new Map<string, number>();
-  for (const d of distributors)
+  for (const { dist: d } of flattenDistributors({ distributors }))
     for (const b of d.plugboxes)
       if (b.cable) usage.set(b.cable.cableTypeId, (usage.get(b.cable.cableTypeId) ?? 0) + 1);
 

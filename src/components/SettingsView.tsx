@@ -1,4 +1,5 @@
 import { useStore } from '../store';
+import { flattenDistributors } from '../lib/tree';
 import { NumInput } from './ui';
 
 export function SettingsView() {
@@ -74,7 +75,10 @@ export function SettingsView() {
         <button
           className="btn"
           onClick={() => {
-            const n = p.distributors.reduce((a, d) => a + d.plugboxes.reduce((b, x) => b + x.outlets.length, 0), 0);
+            const n = flattenDistributors(p).reduce(
+              (a, { dist: d }) => a + d.plugboxes.reduce((b, x) => b + x.outlets.length, 0),
+              0,
+            );
             if (confirm(`Ziel-Maximum ${p.defaultOutletMaxWatt} W bei allen ${n} bestehenden Abgängen setzen?`))
               setAll(p.defaultOutletMaxWatt);
           }}

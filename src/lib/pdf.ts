@@ -1,8 +1,11 @@
 import { jsPDF } from 'jspdf';
 import autoTable, { type CellHookData, type RowInput } from 'jspdf-autotable';
-import type { FixtureType, Project } from '../types';
+import type { FixtureType, Outlet, Project } from '../types';
+import type { OutletResult } from './calc';
+import { connectorLabel } from './defaults';
 import { PHASES } from '../types';
-import { calcProject, fmtWattPlain, outletName, qtyOf } from './calc';
+import { calcProject, fmtWattPlain, nameOfOutlet, outletBreakerWatt, qtyOf } from './calc';
+import { flattenDistributors, ownOutlets } from './tree';
 import { safeFilename } from './projectFile';
 
 type RGB = [number, number, number];
@@ -121,13 +124,15 @@ export function exportPlanPdf(project: Project, save = true) {
   y += meta ? 12 : 8;
 
   // ══ Kennzahlen ══════════════════════════════════════════════════════════
-  const boxCount = project.distributors.reduce((n, d) => n + d.plugboxes.length, 0);
-  const outlets = project.distributors.flatMap((d) => d.plugboxes.flatMap((b) => b.outlets));
-  const usedOutlets = outlets.filter((o) => o.loads.length > 0).length;
+  const nodes = flattenDistributors(project);
+  const boxCount = nodes.reduce((n, { dist }) => n + dist.plugboxes.length, 0);
+  // Abgänge, an denen ein Unterverteiler hängt, zählen als belegt.
+  const outlets = nodes.flatMap(({ dist }) => ownOutlets(dist));
+  const usedOutlets = outlets.filter((o) => o.loads.length > 0 || o.child).length;
   const kpis: [string, string][] = [
     ['Gesamtleistung', kW(result.watt)],
     ['Verbraucher', `${result.fixtureCount} Stk.`],
-    ['Verteiler', String(project.distributors.length)],
+    ['Verteiler', String(nodes.length)],
     ['Plugboxen', String(boxCount)],
     ['Abgänge belegt', `${usedOutlets} / ${outlets.length}`],
   ];
@@ -166,20 +171,24 @@ export function exportPlanPdf(project: Project, save = true) {
   y += 6;
 
   // ══ Verteiler ═══════════════════════════════════════════════════════════
-  for (const dist of project.distributors) {
+  for (const { dist, parent, parentOutlet } of nodes) {
     const dr = result.distributors.get(dist.id)!;
-    const usedFixtures = project.fixtures.filter((f) =>
-      dist.plugboxes.some((b) => b.outlets.some((o) => qtyOf(o, f.id) > 0)),
-    );
+    const usedFixtures = project.fixtures.filter((f) => ownOutlets(dist).some((o) => qtyOf(o, f.id) > 0));
 
     ensure(58);
 
     doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(...INK);
     doc.text(dist.name, M, y + 3);
     const nameW = doc.getTextWidth(dist.name);
-    if (dist.model) {
+    const subtitle = [
+      dist.model,
+      parent && parentOutlet ? `an ${parent.name} · ${nameOfOutlet(parent, undefined, parentOutlet)}` : '',
+    ]
+      .filter(Boolean)
+      .join('  ·  ');
+    if (subtitle) {
       doc.setFont('helvetica', 'normal').setFontSize(9.5).setTextColor(...SUB);
-      doc.text(`— ${dist.model}`, M + nameW + 3, y + 3);
+      doc.text(`— ${subtitle}`, M + nameW + 3, y + 3);
     }
     const worst = Math.max(dr.pctOfBudget, dr.pctOfPhaseLimit);
     pill(
@@ -201,7 +210,7 @@ export function exportPlanPdf(project: Project, save = true) {
       ['Frei', dist.maxWatt > 0 ? kW(dr.remainingWatt) : '–', dr.remainingWatt < 0 ? DANGER : INK],
       ['Absicherung', dist.maxAmpsPerPhase > 0 ? `${dist.maxAmpsPerPhase} A / Phase` : 'ohne', INK],
       ['Schieflast', dr.maxPhaseAmps > 0 ? `${Math.round(dr.imbalancePct)} %` : '–', dr.imbalancePct > 25 ? WARN : INK],
-      ['Plugboxen', `${dist.plugboxes.length}`, INK],
+      ['Ausgänge / Plugboxen', `${dist.outlets.length} / ${dist.plugboxes.length}`, INK],
       ['Verbraucher', `${dr.fixtureCount} Stk.`, INK],
     ];
     const statW = (CW - 8) / stats.length;
@@ -256,6 +265,42 @@ export function exportPlanPdf(project: Project, save = true) {
     const barMeta = new Map<number, { pct: number; limitPct: number | null; over: boolean }>();
     const overRows = new Set<number>();
 
+    const addOutlet = (name: string, outlet: Outlet, or: OutletResult) => {
+      const breakerWatt = outletBreakerWatt(outlet, project);
+      barMeta.set(body.length, {
+        pct: or.pctOfBreaker,
+        limitPct: outlet.maxWatt > 0 && breakerWatt > 0 ? (outlet.maxWatt / breakerWatt) * 100 : null,
+        over: or.status === 'over',
+      });
+      if (or.status === 'over') overRows.add(body.length);
+      body.push([
+        outlet.child ? `${name} → ${outlet.child.name}` : name,
+        outlet.threePhase ? '3~' : outlet.phase,
+        or.watt ? fmtWattPlain(or.watt) : '',
+        or.watt ? or.amps.toFixed(1) : '',
+        outlet.maxWatt > 0 ? fmtWattPlain(outlet.maxWatt) : '',
+        '',
+        ...usedFixtures.map((f) => {
+          const q = qtyOf(outlet, f.id);
+          return q > 0 ? String(q) : '';
+        }),
+      ]);
+    };
+
+    if (dist.outlets.length > 0) {
+      const sum = dist.outlets.reduce((a, o) => a + dr.direct.get(o.id)!.watt, 0);
+      groupRows.add(body.length);
+      body.push([
+        {
+          content: `Ausgänge      ${dist.outlets.length} Stk.  ·  ${fmtWattPlain(sum)} W`,
+          colSpan: headRow.length,
+        },
+      ]);
+      for (const outlet of dist.outlets) {
+        addOutlet(`${nameOfOutlet(dist, undefined, outlet)}  ${connectorLabel(outlet.connector)}`, outlet, dr.direct.get(outlet.id)!);
+      }
+    }
+
     for (const box of dist.plugboxes) {
       const br = dr.boxes.get(box.id)!;
       const cable = br.drop
@@ -268,29 +313,7 @@ export function exportPlanPdf(project: Project, save = true) {
           colSpan: headRow.length,
         },
       ]);
-
-      for (const outlet of box.outlets) {
-        const or = br.outlets.get(outlet.id)!;
-        const breakerWatt = outlet.breakerAmps * project.voltage * project.cosPhi;
-        barMeta.set(body.length, {
-          pct: or.pctOfBreaker,
-          limitPct: outlet.maxWatt > 0 && breakerWatt > 0 ? (outlet.maxWatt / breakerWatt) * 100 : null,
-          over: or.status === 'over',
-        });
-        if (or.status === 'over') overRows.add(body.length);
-        body.push([
-          outletName(box, outlet),
-          outlet.phase,
-          or.watt ? fmtWattPlain(or.watt) : '',
-          or.watt ? or.amps.toFixed(1) : '',
-          outlet.maxWatt > 0 ? fmtWattPlain(outlet.maxWatt) : '',
-          '',
-          ...usedFixtures.map((f) => {
-            const q = qtyOf(outlet, f.id);
-            return q > 0 ? String(q) : '';
-          }),
-        ]);
-      }
+      for (const outlet of box.outlets) addOutlet(nameOfOutlet(dist, box, outlet), outlet, br.outlets.get(outlet.id)!);
     }
 
     autoTable(doc, {
@@ -318,7 +341,7 @@ export function exportPlanPdf(project: Project, save = true) {
       },
       alternateRowStyles: { fillColor: [250, 251, 253] },
       columnStyles: {
-        0: { halign: 'left', cellWidth: 24, fontStyle: 'bold' },
+        0: { halign: 'left', cellWidth: 40, fontStyle: 'bold' },
         1: { halign: 'center', cellWidth: 8 },
         2: { cellWidth: 15 },
         3: { cellWidth: 11 },

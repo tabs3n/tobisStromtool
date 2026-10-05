@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useStore } from '../store';
 import { cloudConfigured, createCloudProject, getPassword } from '../lib/cloud';
 import { setCloudHash } from '../lib/useCloudSync';
 import { fmtW, type ProjectResult } from '../lib/calc';
 import { pickProjectFile, saveProjectFile } from '../lib/projectFile';
 import { exportPlanPdf } from '../lib/pdf';
-import { TextInput } from './ui';
+import { MenuButton, TextInput } from './ui';
 
 const CLOUD_LABEL = {
   idle: 'Online',
@@ -14,48 +14,6 @@ const CLOUD_LABEL = {
   synced: 'Online ✓',
   error: 'Sync-Fehler',
 } as const;
-
-function FileMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    window.addEventListener('mousedown', close);
-    window.addEventListener('keydown', esc);
-    return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('keydown', esc);
-    };
-  }, [open]);
-
-  return (
-    <div className="menu" ref={ref}>
-      <button className="btn" onClick={() => setOpen((o) => !o)}>
-        Datei ▾
-      </button>
-      {open && (
-        <div className="menu-list">
-          {items.map((it) => (
-            <button
-              key={it.label}
-              onClick={() => {
-                setOpen(false);
-                it.onClick();
-              }}
-            >
-              {it.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function TopBar({ result }: { result: ProjectResult }) {
   const project = useStore((s) => s.project);
@@ -163,7 +121,8 @@ export function TopBar({ result }: { result: ProjectResult }) {
       >
         {sharing ? '…' : copied ? 'Kopiert ✓' : cloudId ? 'Link' : 'Online teilen'}
       </button>
-      <FileMenu
+      <MenuButton
+        label="Datei ▾"
         items={[
           {
             label: 'Neues Projekt',

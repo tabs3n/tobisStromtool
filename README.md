@@ -24,6 +24,22 @@ Läuft dann auf <http://localhost:5180>.
 | **Abgang** | heißt automatisch `FS1_1` … `FS1_6`, hat Netzphase (L1/L2/L3), Absicherung (16 A) und ein eigenes Ziel-Maximum (2 kW). |
 | **Verbraucher** | Bibliothek mit Name, Watt/Stück, Farbe und optional eigenem cos φ. |
 
+### Verteiler mit eigenen Ausgängen, Unterverteiler, Vorlagen
+
+Nicht jeder Verteiler hat Plugboxen. Ein Verteiler kann zusätzlich oder stattdessen **direkte Ausgänge**
+haben (**+ Ausgang**): Schuko 16 A, CEE 16/32 A (1~ oder 3~), CEE 63/125 A, Powerlock. Jeder Ausgang hat
+Absicherung, Ziel-Maximum und ggf. Bestückung wie ein Plugbox-Abgang.
+
+- **Drehstrom-Ausgänge (3~)**: die Last verteilt sich gleichmäßig auf L1/L2/L3, die Absicherung gilt je
+  Phase (angezeigt als „A/Ph“). 1-phasige Ausgänge haben eine wählbare Netzphase.
+- **Unterverteiler**: an einen direkten Ausgang lässt sich per **↳ Vt** ein weiterer Verteiler anschließen
+  (beliebig tief, z. B. 125 A → 63 A → 32 A mit Schuko). Dessen Last zählt auf den Abgang des
+  Elternverteilers (nicht doppelt); Zuleitung und Budget des Unterverteilers kommen aus der
+  Absicherung dieses Ausgangs. Überlastet ein Unterverteiler seinen Ausgang, meldet das der Abgang.
+- **Vorlagen**: **+ Verteiler ▾** legt Verteiler aus Vorlagen an (Plugbox-Verteiler, 125/63/32/16 A, leer).
+  Mit ☆ am Verteiler speicherst du die aktuelle Ausgangs-Zusammenstellung als eigene Vorlage; sie liegt
+  im Projekt und ist damit auch für alle Bearbeiter eines Online-Projekts da.
+
 Abgänge bekommen ihre Netzphase automatisch nach dem Muster 1&4 → L1, 2&5 → L2, 3&6 → L3;
 sie lässt sich pro Abgang überschreiben (Klick auf das Phasen-Badge).
 

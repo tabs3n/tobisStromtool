@@ -9,6 +9,8 @@ import type {
   Project,
 } from '../types';
 import { PHASES } from '../types';
+import { directOutletName } from './defaults';
+import { flattenDistributors } from './tree';
 
 export type PhaseTotals = Record<PhaseId, number>;
 
@@ -20,6 +22,16 @@ export function fixtureIndex(project: Project): Map<string, FixtureType> {
 
 export function outletName(box: PlugBox, outlet: Outlet): string {
   return outlet.nameOverride?.trim() || `${box.name}_${outlet.index}`;
+}
+
+/** Name eines Abgangs; `box` fehlt bei direkten Verteilerausgängen. */
+export function nameOfOutlet(dist: Distributor, box: PlugBox | undefined, outlet: Outlet): string {
+  return box ? outletName(box, outlet) : directOutletName(dist, outlet);
+}
+
+/** Leistung, die die Absicherung des Abgangs trägt (Drehstrom: alle drei Phasen). */
+export function outletBreakerWatt(outlet: Outlet, project: Pick<Project, 'voltage' | 'cosPhi'>): number {
+  return outlet.breakerAmps * project.voltage * project.cosPhi * (outlet.threePhase ? 3 : 1);
 }
 
 export function qtyOf(outlet: Outlet, fixtureId: string): number {
@@ -34,7 +46,11 @@ export function wattToAmps(watt: number, voltage: number, cosPhi: number): numbe
 
 export interface OutletResult {
   watt: number;
+  /** Strom je Leiter: bei 1~ der Strom, bei 3~ ein Drittel – vergleichbar mit der Absicherung. */
   amps: number;
+  /** Strom je Netzphase des übergeordneten Verteilers. */
+  phaseAmps: PhaseTotals;
+  phaseWatt: PhaseTotals;
   /** Auslastung bezogen auf den weichen Max-Wert. */
   pctOfMax: number;
   /** Auslastung bezogen auf die Absicherung. */
@@ -47,21 +63,52 @@ export function calcOutlet(
   outlet: Outlet,
   fx: Map<string, FixtureType>,
   project: Project,
+  child?: DistributorResult,
 ): OutletResult {
+  const phaseAmps = zeroPhases();
+  const phaseWatt = zeroPhases();
   let watt = 0;
   let amps = 0;
   let fixtureCount = 0;
-  if (outlet.enabled) {
+
+  if (outlet.enabled && child) {
+    // Unterverteiler: dessen Phasen laufen 1:1 durch (3~) bzw. summieren sich auf die eine Phase (1~).
+    watt = child.watt;
+    fixtureCount = child.fixtureCount;
+    if (outlet.threePhase) {
+      for (const p of PHASES) {
+        phaseAmps[p] = child.amps[p];
+        phaseWatt[p] = child.wattPerPhase[p];
+      }
+      amps = Math.max(...PHASES.map((p) => child.amps[p]));
+    } else {
+      amps = PHASES.reduce((a, p) => a + child.amps[p], 0);
+      phaseAmps[outlet.phase] = amps;
+      phaseWatt[outlet.phase] = watt;
+    }
+  } else if (outlet.enabled) {
+    let totalAmps = 0;
     for (const load of outlet.loads) {
       const f = fx.get(load.fixtureId);
       if (!f || load.qty <= 0) continue;
       const p = f.watt * load.qty;
       watt += p;
-      amps += wattToAmps(p, project.voltage, f.cosPhi ?? project.cosPhi);
+      totalAmps += wattToAmps(p, project.voltage, f.cosPhi ?? project.cosPhi);
       fixtureCount += load.qty;
     }
+    if (outlet.threePhase) {
+      amps = totalAmps / 3;
+      for (const p of PHASES) {
+        phaseAmps[p] = amps;
+        phaseWatt[p] = watt / 3;
+      }
+    } else {
+      amps = totalAmps;
+      phaseAmps[outlet.phase] = amps;
+      phaseWatt[outlet.phase] = watt;
+    }
   }
-  const breakerWatt = outlet.breakerAmps * project.voltage * project.cosPhi;
+  const breakerWatt = outletBreakerWatt(outlet, project);
   const pctOfMax = outlet.maxWatt > 0 ? (watt / outlet.maxWatt) * 100 : 0;
   const pctOfBreaker = breakerWatt > 0 ? (watt / breakerWatt) * 100 : 0;
 
@@ -70,7 +117,7 @@ export function calcOutlet(
   else if (amps > outlet.breakerAmps + 1e-9) status = 'over';
   else if (outlet.maxWatt > 0 && watt > outlet.maxWatt + 1e-9) status = 'warn';
 
-  return { watt, amps, pctOfMax, pctOfBreaker, status, fixtureCount };
+  return { watt, amps, phaseAmps, phaseWatt, pctOfMax, pctOfBreaker, status, fixtureCount };
 }
 
 export interface BoxResult {
@@ -97,8 +144,10 @@ export function calcBox(box: PlugBox, fx: Map<string, FixtureType>, project: Pro
     outlets.set(outlet.id, r);
     watt += r.watt;
     fixtureCount += r.fixtureCount;
-    amps[outlet.phase] += r.amps;
-    wattPerPhase[outlet.phase] += r.watt;
+    for (const p of PHASES) {
+      amps[p] += r.phaseAmps[p];
+      wattPerPhase[p] += r.phaseWatt[p];
+    }
   }
 
   const values = PHASES.map((p) => amps[p]);
@@ -125,6 +174,8 @@ export interface DistributorResult {
   maxPhaseAmps: number;
   imbalancePct: number;
   fixtureCount: number;
+  /** Ergebnisse der direkten Ausgänge. */
+  direct: Map<string, OutletResult>;
   boxes: Map<string, BoxResult>;
   /** Auslastung des Watt-Budgets in %. */
   pctOfBudget: number;
@@ -135,16 +186,34 @@ export interface DistributorResult {
   overPhase: boolean;
 }
 
+/**
+ * Rechnet einen Verteiler samt Unterverteilern. Alle Ergebnisse (auch die der Unterverteiler)
+ * landen in `all`.
+ */
 export function calcDistributor(
   dist: Distributor,
   fx: Map<string, FixtureType>,
   project: Project,
+  all: Map<string, DistributorResult> = new Map(),
 ): DistributorResult {
   const amps = zeroPhases();
   const wattPerPhase = zeroPhases();
   const boxes = new Map<string, BoxResult>();
+  const direct = new Map<string, OutletResult>();
   let watt = 0;
   let fixtureCount = 0;
+
+  for (const outlet of dist.outlets) {
+    const childRes = outlet.child ? calcDistributor(outlet.child, fx, project, all) : undefined;
+    const r = calcOutlet(outlet, fx, project, childRes);
+    direct.set(outlet.id, r);
+    watt += r.watt;
+    fixtureCount += r.fixtureCount;
+    for (const p of PHASES) {
+      amps[p] += r.phaseAmps[p];
+      wattPerPhase[p] += r.phaseWatt[p];
+    }
+  }
 
   for (const box of dist.plugboxes) {
     const r = calcBox(box, fx, project);
@@ -161,13 +230,14 @@ export function calcDistributor(
   const maxPhaseAmps = Math.max(...values);
   const minPhaseAmps = Math.min(...values);
 
-  return {
+  const res: DistributorResult = {
     watt,
     amps,
     wattPerPhase,
     maxPhaseAmps,
     imbalancePct: maxPhaseAmps > 0 ? ((maxPhaseAmps - minPhaseAmps) / maxPhaseAmps) * 100 : 0,
     fixtureCount,
+    direct,
     boxes,
     pctOfBudget: dist.maxWatt > 0 ? (watt / dist.maxWatt) * 100 : 0,
     pctOfPhaseLimit: dist.maxAmpsPerPhase > 0 ? (maxPhaseAmps / dist.maxAmpsPerPhase) * 100 : 0,
@@ -175,6 +245,8 @@ export function calcDistributor(
     overBudget: dist.maxWatt > 0 && watt > dist.maxWatt,
     overPhase: dist.maxAmpsPerPhase > 0 && maxPhaseAmps > dist.maxAmpsPerPhase,
   };
+  all.set(dist.id, res);
+  return res;
 }
 
 export interface VoltageDropResult {
@@ -266,11 +338,28 @@ export function calcProject(project: Project): ProjectResult {
   let watt = 0;
   let fixtureCount = 0;
 
+  const addFixtureTotals = (outlet: Outlet) => {
+    if (!outlet.enabled) return;
+    for (const load of outlet.loads) {
+      if (load.qty <= 0) continue;
+      const f = fx.get(load.fixtureId);
+      if (!f) continue;
+      const prev = fixtureTotals.get(load.fixtureId) ?? { qty: 0, watt: 0 };
+      prev.qty += load.qty;
+      prev.watt += load.qty * f.watt;
+      fixtureTotals.set(load.fixtureId, prev);
+    }
+  };
+
+  // Hauptverteiler enthalten ihre Unterverteiler bereits in der Summe.
   for (const dist of project.distributors) {
-    const dr = calcDistributor(dist, fx, project);
-    distributors.set(dist.id, dr);
+    const dr = calcDistributor(dist, fx, project, distributors);
     watt += dr.watt;
     fixtureCount += dr.fixtureCount;
+  }
+
+  for (const { dist } of flattenDistributors(project)) {
+    const dr = distributors.get(dist.id)!;
 
     if (dr.overBudget) {
       issues.push({
@@ -294,6 +383,27 @@ export function calcProject(project: Project): ProjectResult {
         scope: dist.name,
         message: `Schieflast ${dr.imbalancePct.toFixed(0)} % (L1 ${dr.amps.L1.toFixed(1)} A / L2 ${dr.amps.L2.toFixed(1)} A / L3 ${dr.amps.L3.toFixed(1)} A).`,
       });
+    }
+
+    for (const outlet of dist.outlets) {
+      const or = dr.direct.get(outlet.id)!;
+      const name = directOutletName(dist, outlet);
+      if (or.status === 'over') {
+        issues.push({
+          level: 'error',
+          code: 'outlet-breaker',
+          scope: `${dist.name} · ${name}`,
+          message: `${or.amps.toFixed(1)} A${outlet.threePhase ? ' je Phase' : ''} über Absicherung ${outlet.breakerAmps} A (${fmtW(or.watt)}).`,
+        });
+      } else if (or.status === 'warn') {
+        issues.push({
+          level: 'warn',
+          code: 'outlet-target',
+          scope: `${dist.name} · ${name}`,
+          message: `${fmtW(or.watt)} über eigenem Maximum ${fmtW(outlet.maxWatt)}.`,
+        });
+      }
+      addFixtureTotals(outlet);
     }
 
     for (const box of dist.plugboxes) {
@@ -334,15 +444,7 @@ export function calcProject(project: Project): ProjectResult {
             message: `${fmtW(or.watt)} über eigenem Maximum ${fmtW(outlet.maxWatt)}.`,
           });
         }
-        for (const load of outlet.loads) {
-          if (load.qty <= 0) continue;
-          const f = fx.get(load.fixtureId);
-          if (!f) continue;
-          const prev = fixtureTotals.get(load.fixtureId) ?? { qty: 0, watt: 0 };
-          prev.qty += load.qty;
-          prev.watt += load.qty * f.watt;
-          fixtureTotals.set(load.fixtureId, prev);
-        }
+        addFixtureTotals(outlet);
       }
     }
   }

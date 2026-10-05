@@ -1,39 +1,74 @@
-import { useStore } from '../store';
+import { DIRECT, useStore } from '../store';
 import type { Distributor, FixtureType, Outlet, PhaseId, PlugBox } from '../types';
 import { PHASES } from '../types';
 import {
   fmtA,
   fmtW,
   fmtWattPlain,
+  outletBreakerWatt,
   outletName,
   statusColor,
   type BoxResult,
-  type DistributorResult,
+  type OutletResult,
   type ProjectResult,
 } from '../lib/calc';
-import { budgetFromAmps, SUPPLY_PRESETS } from '../lib/defaults';
-import { NumInput, TextInput } from './ui';
+import {
+  allTemplates,
+  budgetFromAmps,
+  CONNECTORS,
+  connectorLabel,
+  directOutletName,
+  SUPPLY_PRESETS,
+} from '../lib/defaults';
+import { MenuButton, NumInput, TextInput } from './ui';
+
+/** Auswahlliste der Verteiler-Vorlagen (eingebaut + eigene). */
+function useTemplateItems(onPick: (templateId: string) => void) {
+  const templates = useStore((s) => s.project.templates);
+  return allTemplates({ templates }).map((tpl, i) => ({
+    label: tpl.name,
+    hint: tpl.outlets.length
+      ? tpl.outlets.map((o) => `${o.count}× ${connectorLabel(o.connector)}`).join(' · ')
+      : tpl.plugboxes
+        ? `${tpl.plugboxes} Plugboxen`
+        : undefined,
+    separator: i > 0 && tpl.id.startsWith('tpl_') && !allTemplates({ templates })[i - 1].id.startsWith('tpl_'),
+    onClick: () => onPick(tpl.id),
+  }));
+}
 
 export function PlanView({ result }: { result: ProjectResult }) {
   const distributors = useStore((s) => s.project.distributors);
   const addDistributor = useStore((s) => s.addDistributor);
+  const templateItems = useTemplateItems(addDistributor);
 
   return (
     <div>
       {distributors.map((d) => (
-        <DistributorCard key={d.id} dist={d} res={result.distributors.get(d.id)!} />
+        <DistributorCard key={d.id} dist={d} result={result} />
       ))}
       {distributors.length === 0 && (
         <div className="empty-state">Noch kein Verteiler angelegt.</div>
       )}
-      <button className="btn primary" onClick={addDistributor}>
-        + Verteiler
-      </button>
+      <MenuButton label="+ Verteiler ▾" className="btn primary" align="left" items={templateItems} />
     </div>
   );
 }
 
-function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorResult }) {
+function DistributorCard({
+  dist,
+  result,
+  parentLabel,
+}: {
+  dist: Distributor;
+  result: ProjectResult;
+  /** Gesetzt bei Unterverteilern: Name des Abgangs, an dem er hängt. */
+  parentLabel?: string;
+}) {
+  const res = result.distributors.get(dist.id)!;
+  const isChild = parentLabel !== undefined;
+  const addDirectOutlet = useStore((s) => s.addDirectOutlet);
+  const saveTemplate = useStore((s) => s.saveTemplate);
   const update = useStore((s) => s.updateDistributor);
   const remove = useStore((s) => s.removeDistributor);
   const move = useStore((s) => s.moveDistributor);
@@ -46,9 +81,10 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
   const budgetPct = Math.min(100, res.pctOfBudget);
 
   return (
-    <div className="dist">
+    <div className={`dist ${isChild ? 'child' : ''}`}>
       <div className="dist-head">
         <div>
+          {isChild && <div className="child-label">↳ an {parentLabel}</div>}
           <TextInput
             className="inline dist-name"
             value={dist.name}
@@ -158,16 +194,32 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
         </div>
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          <button className="btn icon" title="nach oben" onClick={() => move(dist.id, -1)}>
-            ↑
-          </button>
-          <button className="btn icon" title="nach unten" onClick={() => move(dist.id, 1)}>
-            ↓
+          {!isChild && (
+            <>
+              <button className="btn icon" title="nach oben" onClick={() => move(dist.id, -1)}>
+                ↑
+              </button>
+              <button className="btn icon" title="nach unten" onClick={() => move(dist.id, 1)}>
+                ↓
+              </button>
+            </>
+          )}
+          <button
+            className="btn icon"
+            title="Als Vorlage speichern (Ausgänge und Absicherung)"
+            onClick={() => {
+              const name = prompt('Name der Vorlage:', dist.model || dist.name);
+              if (name !== null) saveTemplate(dist.id, name);
+            }}
+          >
+            ☆
           </button>
           <button
             className="btn icon danger"
-            title="Verteiler löschen"
-            onClick={() => confirm(`Verteiler ${dist.name} löschen?`) && remove(dist.id)}
+            title={isChild ? 'Unterverteiler entfernen' : 'Verteiler löschen'}
+            onClick={() =>
+              confirm(`${isChild ? 'Unterverteiler' : 'Verteiler'} ${dist.name} löschen?`) && remove(dist.id)
+            }
           >
             ✕
           </button>
@@ -175,6 +227,25 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
       </div>
 
       <div className="boxes">
+        {dist.outlets.length > 0 && (
+          <div className="box">
+            <div className="box-head">
+              <span className="box-name">Ausgänge</span>
+              <span className="box-sum">{dist.outlets.length} Stk.</span>
+            </div>
+            {dist.outlets.map((o) => (
+              <OutletRow
+                key={o.id}
+                dist={dist}
+                boxId={DIRECT}
+                name={directOutletName(dist, o)}
+                outlet={o}
+                or={res.direct.get(o.id)!}
+                fixtures={fixtures}
+              />
+            ))}
+          </div>
+        )}
         {dist.plugboxes.map((box) => (
           <PlugBoxCard
             key={box.id}
@@ -184,14 +255,34 @@ function DistributorCard({ dist, res }: { dist: Distributor; res: DistributorRes
             fixtures={fixtures}
           />
         ))}
-        <button
-          className="btn"
-          style={{ alignSelf: 'start', minHeight: 40 }}
-          onClick={() => addPlugBox(dist.id)}
-        >
-          + Plugbox
-        </button>
+        <div className="add-col">
+          <MenuButton
+            label="+ Ausgang ▾"
+            align="left"
+            title="CEE-, Schuko- oder anderen Ausgang hinzufügen"
+            items={CONNECTORS.map((c) => ({ label: c.label, onClick: () => addDirectOutlet(dist.id, c.id) }))}
+          />
+          <button className="btn" onClick={() => addPlugBox(dist.id)}>
+            + Plugbox
+          </button>
+        </div>
       </div>
+
+      {dist.outlets.some((o) => o.child) && (
+        <div className="children">
+          {dist.outlets.map(
+            (o) =>
+              o.child && (
+                <DistributorCard
+                  key={o.child.id}
+                  dist={o.child}
+                  result={result}
+                  parentLabel={`${directOutletName(dist, o)} (${connectorLabel(o.connector)})`}
+                />
+              ),
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -302,7 +393,15 @@ function PlugBoxCard({
       </div>
 
       {box.outlets.map((o) => (
-        <OutletRow key={o.id} dist={dist} box={box} outlet={o} res={res} fixtures={fixtures} />
+        <OutletRow
+          key={o.id}
+          dist={dist}
+          boxId={box.id}
+          name={outletName(box, o)}
+          outlet={o}
+          or={res.outlets.get(o.id)!}
+          fixtures={fixtures}
+        />
       ))}
     </div>
   );
@@ -310,44 +409,57 @@ function PlugBoxCard({
 
 function OutletRow({
   dist,
-  box,
+  boxId,
+  name,
   outlet,
-  res,
+  or,
   fixtures,
 }: {
   dist: Distributor;
-  box: PlugBox;
+  boxId: string;
+  name: string;
   outlet: Outlet;
-  res: BoxResult;
+  or: OutletResult;
   fixtures: FixtureType[];
 }) {
   const selectOutlet = useStore((s) => s.selectOutlet);
   const updateOutlet = useStore((s) => s.updateOutlet);
+  const attachChild = useStore((s) => s.attachChild);
   const voltage = useStore((s) => s.project.voltage);
   const cosPhi = useStore((s) => s.project.cosPhi);
-  const or = res.outlets.get(outlet.id)!;
+  const templateItems = useTemplateItems((id) => attachChild(dist.id, outlet.id, id));
 
-  const breakerWatt = outlet.breakerAmps * voltage * cosPhi;
-  const fillPct = breakerWatt > 0 ? Math.min(100, (or.watt / breakerWatt) * 100) : 0;
+  const breakerWatt = outletBreakerWatt(outlet, { voltage, cosPhi });
+  const fillPct = Math.min(100, or.pctOfBreaker);
   const limitPct = breakerWatt > 0 && outlet.maxWatt > 0 ? Math.min(100, (outlet.maxWatt / breakerWatt) * 100) : null;
   const fxById = new Map(fixtures.map((f) => [f.id, f]));
+  const isDirect = boxId === DIRECT;
 
   const cyclePhase = (e: React.MouseEvent) => {
     e.stopPropagation();
     const next = PHASES[(PHASES.indexOf(outlet.phase) + 1) % 3] as PhaseId;
-    updateOutlet(dist.id, box.id, outlet.id, { phase: next });
+    updateOutlet(dist.id, boxId, outlet.id, { phase: next });
   };
 
   return (
     <div
       className={`outlet ${outlet.enabled ? '' : 'disabled'}`}
-      onClick={() => selectOutlet({ distId: dist.id, boxId: box.id, outletId: outlet.id })}
-      title="Klicken zum Bestücken"
+      onClick={() => selectOutlet({ distId: dist.id, boxId, outletId: outlet.id })}
+      title={outlet.child ? 'Klicken zum Bearbeiten des Abgangs' : 'Klicken zum Bestücken'}
     >
-      <span className="oname">{outletName(box, outlet)}</span>
-      <button className={`phase-badge phase-${outlet.phase}`} onClick={cyclePhase} title="Netzphase wechseln">
-        {outlet.phase}
-      </button>
+      <span className="oname">
+        {name}
+        {isDirect && <small className="conn">{connectorLabel(outlet.connector)}</small>}
+      </span>
+      {outlet.threePhase ? (
+        <span className="phase-badge phase-3" title="Drehstrom – Last verteilt sich auf L1/L2/L3">
+          3~
+        </span>
+      ) : (
+        <button className={`phase-badge phase-${outlet.phase}`} onClick={cyclePhase} title="Netzphase wechseln">
+          {outlet.phase}
+        </button>
+      )}
       <div className="outlet-body">
         <div className="outlet-meter">
           <div className="meter">
@@ -359,23 +471,42 @@ function OutletRow({
           <span className="outlet-vals">
             <b style={{ color: or.status === 'over' ? 'var(--danger)' : undefined }}>{fmtWattPlain(or.watt)} W</b>
             {' · '}
-            {or.amps.toFixed(1)} A
+            {or.amps.toFixed(1)} A{outlet.threePhase ? '/Ph' : ''}
           </span>
         </div>
         <div className="chips">
-          {outlet.loads.length === 0 && <span className="chip empty">frei</span>}
-          {outlet.loads.map((l) => {
-            const f = fxById.get(l.fixtureId);
-            if (!f) return null;
-            return (
-              <span className="chip" key={l.fixtureId} title={`${f.watt} W/Stück`}>
-                <span className="dot" style={{ background: f.color }} />
-                <b>{l.qty}×</b> {f.name}
-              </span>
-            );
-          })}
+          {outlet.child && (
+            <span className="chip">
+              <b>↳</b> {outlet.child.name}
+              {outlet.child.model && ` · ${outlet.child.model}`}
+            </span>
+          )}
+          {!outlet.child && outlet.loads.length === 0 && <span className="chip empty">frei</span>}
+          {!outlet.child &&
+            outlet.loads.map((l) => {
+              const f = fxById.get(l.fixtureId);
+              if (!f) return null;
+              return (
+                <span className="chip" key={l.fixtureId} title={`${f.watt} W/Stück`}>
+                  <span className="dot" style={{ background: f.color }} />
+                  <b>{l.qty}×</b> {f.name}
+                </span>
+              );
+            })}
+          {isDirect && !outlet.child && (
+            <span onClick={(e) => e.stopPropagation()}>
+              <MenuButton
+                label="↳ Vt"
+                className="btn sm"
+                align="left"
+                items={templateItems}
+                title="Verteiler an diesen Ausgang anschließen"
+              />
+            </span>
+          )}
         </div>
       </div>
     </div>
   );
 }
+
