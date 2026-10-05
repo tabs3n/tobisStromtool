@@ -39,6 +39,8 @@ export interface StoreState {
   replaceProject: (p: Project) => void;
   newProject: () => void;
   patchProject: (patch: Partial<Project>) => void;
+  /** Setzt das Ziel-Maximum (W) bei allen bestehenden Abgängen. */
+  setAllOutletMaxWatt: (maxWatt: number) => void;
 
   addDistributor: () => void;
   updateDistributor: (id: string, patch: Partial<Distributor>) => void;
@@ -135,6 +137,12 @@ export const useStore = create<StoreState>()(
       patchProject: (patch) =>
         set((s) => {
           Object.assign(s.project, patch);
+        }),
+
+      setAllOutletMaxWatt: (maxWatt) =>
+        set((s) => {
+          for (const d of s.project.distributors)
+            for (const b of d.plugboxes) for (const o of b.outlets) o.maxWatt = maxWatt;
         }),
 
       addDistributor: () =>

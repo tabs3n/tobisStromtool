@@ -4,6 +4,7 @@ import { NumInput } from './ui';
 export function SettingsView() {
   const p = useStore((s) => s.project);
   const patch = useStore((s) => s.patchProject);
+  const setAll = useStore((s) => s.setAllOutletMaxWatt);
 
   return (
     <>
@@ -67,6 +68,19 @@ export function SettingsView() {
             />
           </label>
         </div>
+        <p className="hint" style={{ marginTop: 12 }}>
+          Das Ziel-Maximum gilt nur für neue Abgänge. Um es auch bei allen bestehenden Abgängen zu übernehmen:
+        </p>
+        <button
+          className="btn"
+          onClick={() => {
+            const n = p.distributors.reduce((a, d) => a + d.plugboxes.reduce((b, x) => b + x.outlets.length, 0), 0);
+            if (confirm(`Ziel-Maximum ${p.defaultOutletMaxWatt} W bei allen ${n} bestehenden Abgängen setzen?`))
+              setAll(p.defaultOutletMaxWatt);
+          }}
+        >
+          Auf alle bestehenden Abgänge anwenden
+        </button>
       </div>
 
       <div className="card">
